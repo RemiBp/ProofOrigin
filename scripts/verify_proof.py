@@ -4,10 +4,10 @@ ProofOrigin - Script de vérification indépendant
 Vérifie l'authenticité d'un fichier à partir d'une preuve .proof
 
 Usage:
-    python verify_proof.py <fichier_original> <fichier_preuve.proof>
+    python scripts/verify_proof.py <fichier_original> <fichier_preuve.proof>
 
 Exemple:
-    python verify_proof.py document.pdf proof_1_document.pdf.proof
+    python scripts/verify_proof.py document.pdf proof_1_document.pdf.proof
 """
 
 import sys
@@ -99,9 +99,9 @@ def format_timestamp(timestamp):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python verify_proof.py <fichier_original> <fichier_preuve.proof>")
+        print("Usage: python scripts/verify_proof.py <fichier_original> <fichier_preuve.proof>")
         print("\nExemple:")
-        print("  python verify_proof.py document.pdf proof_1_document.pdf.proof")
+        print("  python scripts/verify_proof.py document.pdf proof_1_document.pdf.proof")
         sys.exit(1)
     
     file_path = sys.argv[1]

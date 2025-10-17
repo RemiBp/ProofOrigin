@@ -4,11 +4,12 @@ Système d'ancrage des preuves sur blockchain publique
 """
 
 import hashlib
+import os
+import sqlite3
 import time
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-import sqlite3
-import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 try:
     from web3 import Web3
@@ -78,10 +79,16 @@ class MerkleTree:
 
 class BlockchainAnchor:
     """Système d'ancrage sur blockchain"""
-    
-    def __init__(self, rpc_url: str = None, private_key: str = None):
+
+    def __init__(
+        self,
+        rpc_url: str | None = None,
+        private_key: str | None = None,
+        database_path: str | None = None,
+    ):
         self.rpc_url = rpc_url or os.getenv("WEB3_RPC_URL") or "https://polygon-rpc.com"
         self.private_key = private_key or os.getenv("WEB3_PRIVATE_KEY")
+        self.database_path = database_path or os.getenv("PROOFORIGIN_DATABASE", "ledger.db")
         self.w3 = None
         self.account = None
         self.chain_id = None
@@ -122,9 +129,13 @@ class BlockchainAnchor:
             self.account = None
             self.chain_id = None
 
-    def get_daily_proofs(self, db_file: str = "ledger.db") -> List[Dict[str, Any]]:
+    def _resolve_db_path(self, db_file: str | None = None) -> str:
+        return db_file or self.database_path
+
+    def get_daily_proofs(self, db_file: str | None = None) -> List[Dict[str, Any]]:
         """Récupère toutes les preuves du jour"""
-        conn = sqlite3.connect(db_file)
+        database = self._resolve_db_path(db_file)
+        conn = sqlite3.connect(database)
         c = conn.cursor()
         
         # Preuves des dernières 24h
@@ -260,9 +271,11 @@ class BlockchainAnchor:
         if 'anchor_signature' not in columns:
             cursor.execute("ALTER TABLE anchors ADD COLUMN anchor_signature TEXT")
 
-    def save_anchor_record(self, merkle_data: Dict[str, Any], tx_hash: str, db_file: str = "ledger.db"):
+    def save_anchor_record(self, merkle_data: Dict[str, Any], tx_hash: str, db_file: str | None = None):
         """Sauvegarde l'enregistrement d'ancrage"""
-        conn = sqlite3.connect(db_file)
+        database = self._resolve_db_path(db_file)
+        Path(database).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(database)
         c = conn.cursor()
 
         # Créer la table des ancrages si elle n'existe pas
@@ -300,9 +313,10 @@ class BlockchainAnchor:
         finally:
             conn.close()
     
-    def get_anchor_history(self, db_file: str = "ledger.db") -> List[Dict[str, Any]]:
+    def get_anchor_history(self, db_file: str | None = None) -> List[Dict[str, Any]]:
         """Récupère l'historique des ancrages"""
-        conn = sqlite3.connect(db_file)
+        database = self._resolve_db_path(db_file)
+        conn = sqlite3.connect(database)
         c = conn.cursor()
         
         c.execute("""
@@ -326,9 +340,10 @@ class BlockchainAnchor:
         conn.close()
         return anchors
     
-    def verify_proof_in_anchor(self, proof_id: int, db_file: str = "ledger.db") -> Dict[str, Any]:
+    def verify_proof_in_anchor(self, proof_id: int, db_file: str | None = None) -> Dict[str, Any]:
         """Vérifie qu'une preuve est incluse dans un ancrage"""
-        conn = sqlite3.connect(db_file)
+        database = self._resolve_db_path(db_file)
+        conn = sqlite3.connect(database)
         c = conn.cursor()
         
         # Récupérer la preuve
@@ -372,13 +387,17 @@ class BlockchainAnchor:
                 'error': 'No anchor found for this date'
             }
 
-def run_daily_anchoring(db_file: str = "ledger.db", rpc_url: str = None, private_key: str = None):
+def run_daily_anchoring(
+    db_file: str | None = None,
+    rpc_url: str | None = None,
+    private_key: str | None = None,
+):
     """Fonction principale pour l'ancrage quotidien"""
     print("🔗 ProofOrigin - Ancrage quotidien")
     print("=" * 40)
-    
+
     # Initialiser l'ancreur
-    anchorer = BlockchainAnchor(rpc_url, private_key)
+    anchorer = BlockchainAnchor(rpc_url, private_key, database_path=db_file)
     
     # Récupérer les preuves du jour
     print("📊 Récupération des preuves du jour...")
@@ -417,18 +436,31 @@ if __name__ == "__main__":
     # Configuration par défaut (simulation)
     rpc_url = None
     private_key = None
+    db_path = None
     
     if len(sys.argv) > 1:
         if sys.argv[1] == "--help":
-            print("Usage: python blockchain_anchor.py [--rpc-url URL] [--private-key KEY]")
-            print("Exemple: python blockchain_anchor.py --rpc-url https://polygon-rpc.com --private-key 0x...")
+            print("Usage: python -m prooforigin.services.blockchain [--rpc-url URL] [--private-key KEY] [--db PATH]")
+            print(
+                "Exemple: python -m prooforigin.services.blockchain --rpc-url https://polygon-rpc.com --private-key 0x..."
+            )
             sys.exit(0)
-        
+
         # Parser les arguments
-        for i, arg in enumerate(sys.argv[1:], 1):
-            if arg == "--rpc-url" and i + 1 < len(sys.argv):
-                rpc_url = sys.argv[i + 1]
-            elif arg == "--private-key" and i + 1 < len(sys.argv):
-                private_key = sys.argv[i + 1]
-    
-    run_daily_anchoring(rpc_url=rpc_url, private_key=private_key)
+        args = sys.argv[1:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--rpc-url" and i + 1 < len(args):
+                rpc_url = args[i + 1]
+                i += 2
+            elif arg == "--private-key" and i + 1 < len(args):
+                private_key = args[i + 1]
+                i += 2
+            elif arg == "--db" and i + 1 < len(args):
+                db_path = args[i + 1]
+                i += 2
+            else:
+                i += 1
+
+    run_daily_anchoring(db_file=db_path, rpc_url=rpc_url, private_key=private_key)

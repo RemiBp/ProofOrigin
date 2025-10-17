@@ -27,7 +27,7 @@ class ProofOriginDeployer:
             "host": "0.0.0.0",
             "port": 5000,
             "debug": False,
-            "database_url": "sqlite:///ledger.db",
+            "database_url": "sqlite:///instance/ledger.db",
             "blockchain": {
                 "rpc_url": "https://polygon-rpc.com",
                 "private_key": None,
@@ -57,8 +57,10 @@ class ProofOriginDeployer:
         print("🔍 Vérification des dépendances...")
         
         required_packages = [
-            'flask', 'cryptography', 'opencv-python', 
-            'Pillow', 'numpy', 'sentence-transformers', 'web3'
+            'flask',
+            'cryptography',
+            'web3',
+            'eth-account',
         ]
         
         missing_packages = []
@@ -86,7 +88,9 @@ class ProofOriginDeployer:
         env_vars = {
             'FLASK_ENV': 'production',
             'FLASK_DEBUG': 'False',
-            'PROOFORIGIN_ENV': self.config['environment']
+            'PROOFORIGIN_ENV': self.config['environment'],
+            'PROOFORIGIN_DATABASE': str(self.project_root / 'instance' / 'ledger.db'),
+            'PROOFORIGIN_KEYS': str(self.project_root / 'keys'),
         }
         
         for key, value in env_vars.items():
@@ -94,34 +98,36 @@ class ProofOriginDeployer:
             print(f"  {key}={value}")
         
         # Créer les dossiers nécessaires
-        directories = ['logs', 'temp', 'exports']
+        directories = ['instance', 'instance/tmp', 'instance/exports', 'keys']
         for directory in directories:
             dir_path = self.project_root / directory
-            dir_path.mkdir(exist_ok=True)
+            dir_path.mkdir(parents=True, exist_ok=True)
             print(f"  📁 Créé: {directory}/")
     
     def generate_keys(self):
         """Génère les clés cryptographiques si elles n'existent pas"""
         print("🔑 Vérification des clés cryptographiques...")
         
-        private_key_path = self.project_root / "private.pem"
-        public_key_path = self.project_root / "public.pem"
-        
+        private_key_path = self.project_root / "keys" / "private.pem"
+        public_key_path = self.project_root / "keys" / "public.pem"
+
         if not private_key_path.exists() or not public_key_path.exists():
             print("  🔧 Génération des nouvelles clés...")
-            subprocess.run([sys.executable, "generate_keys.py"])
+            subprocess.run([sys.executable, "scripts/generate_keys.py"], check=True)
             print("  ✅ Clés générées")
         else:
             print("  ✅ Clés existantes trouvées")
-    
+
     def initialize_database(self):
         """Initialise la base de données"""
         print("🗄️ Initialisation de la base de données...")
-        
-        # Importer et initialiser la DB
+
         sys.path.append(str(self.project_root))
-        from app import init_db
-        init_db()
+        from prooforigin.config import ProofOriginConfig
+        from prooforigin.database import init_db
+
+        config = ProofOriginConfig()
+        init_db(config.database)
         print("  ✅ Base de données initialisée")
     
     def setup_ssl(self):
@@ -160,12 +166,13 @@ import sys
 import os
 sys.path.append('{self.project_root}')
 
-from blockchain_anchor import run_daily_anchoring
+from prooforigin.services.blockchain import run_daily_anchoring
 
 if __name__ == "__main__":
     run_daily_anchoring(
         rpc_url="{self.config['blockchain']['rpc_url']}",
-        private_key="{self.config['blockchain']['private_key']}"
+        private_key="{self.config['blockchain']['private_key']}",
+        db_file=os.path.join('{self.project_root}', 'instance', 'ledger.db')
     )
 '''
         
@@ -192,7 +199,7 @@ Type=simple
 User=www-data
 WorkingDirectory={self.project_root}
 Environment=PATH={self.project_root}/venv/bin
-ExecStart={self.project_root}/venv/bin/python app.py
+ExecStart={self.project_root}/venv/bin/python -m prooforigin
 Restart=always
 RestartSec=10
 
@@ -233,7 +240,7 @@ WantedBy=multi-user.target
     def check_database(self):
         """Vérifie la base de données"""
         import sqlite3
-        conn = sqlite3.connect(self.project_root / "ledger.db")
+        conn = sqlite3.connect(self.project_root / "instance" / "ledger.db")
         c = conn.cursor()
         c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         tables = c.fetchall()
@@ -246,23 +253,23 @@ WantedBy=multi-user.target
     
     def check_crypto_keys(self):
         """Vérifie les clés cryptographiques"""
-        private_key = self.project_root / "private.pem"
-        public_key = self.project_root / "public.pem"
+        private_key = self.project_root / "keys" / "private.pem"
+        public_key = self.project_root / "keys" / "public.pem"
         
         if not private_key.exists() or not public_key.exists():
             raise Exception("Clés cryptographiques manquantes")
     
     def check_permissions(self):
         """Vérifie les permissions des fichiers"""
-        important_files = ['app.py', 'private.pem', 'public.pem']
-        
+        important_files = ['app.py', 'keys/private.pem', 'keys/public.pem']
+
         for file_path in important_files:
             full_path = self.project_root / file_path
             if not full_path.exists():
                 raise Exception(f"Fichier manquant: {file_path}")
-            
+
             # Vérifier que private.pem n'est pas lisible par tous
-            if file_path == 'private.pem':
+            if file_path == 'keys/private.pem':
                 stat = full_path.stat()
                 if stat.st_mode & 0o077:
                     raise Exception("Clé privée accessible par d'autres utilisateurs")

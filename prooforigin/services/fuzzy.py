@@ -1,15 +1,12 @@
-"""
-ProofOrigin - Fuzzy Matching & Perceptual Hashing
-Support pour la reconnaissance de contenu similaire (images et texte)
-Version simplifiée sans dépendances lourdes
-"""
+"""Utility classes implementing simplified fuzzy matching for ProofOrigin."""
+
+from __future__ import annotations
 
 import hashlib
-import requests
-from typing import Optional, Dict, Any, List
-import re
 import json
 import os
+import re
+from typing import Any, Dict, List, Optional
 
 class PerceptualHasher:
     """Générateur d'empreintes perceptuelles pour images (version simplifiée)"""
@@ -156,18 +153,20 @@ class TextSimilarity:
             return 0.0
 
 class FuzzyMatcher:
-    """Matcher principal pour la reconnaissance de contenu similaire"""
-    
-    def __init__(self):
+    """Matcher principal pour la reconnaissance de contenu similaire."""
+
+    def __init__(self, image_threshold: float = 0.8, text_match_threshold: float = 1.0):
         self.image_hasher = PerceptualHasher()
         self.text_analyzer = TextSimilarity()
+        self.image_threshold = image_threshold
+        self.text_match_threshold = text_match_threshold
     
     def analyze_file(self, file_path: str, file_type: str = None) -> Dict[str, Any]:
         """
         Analyse un fichier et génère toutes les empreintes possibles
         """
         result = {
-            'file_path': file_path,
+            'file_path': os.path.basename(file_path),
             'file_type': file_type,
             'sha256': None,
             'phash': None,
@@ -200,6 +199,7 @@ class FuzzyMatcher:
                         text_content = f.read()
                         result['semantic_hash'] = self.text_analyzer.compute_semantic_hash(text_content)
                         result['content_type'] = 'text'
+                        result['raw_text'] = text_content[:5000]
                 except UnicodeDecodeError:
                     result['content_type'] = 'binary'
             
@@ -249,16 +249,16 @@ class FuzzyMatcher:
                     file_analysis['phash'], proof['phash']
                 )
                 
-                if phash_similarity > 0.8:  # Seuil de similarité
+                if phash_similarity >= self.image_threshold:  # Seuil de similarité
                     similarity_data['similarity_score'] = phash_similarity
                     similarity_data['match_type'] = 'perceptual_hash'
-                    similarity_data['confidence'] = 'high' if phash_similarity > 0.9 else 'medium'
+                    similarity_data['confidence'] = 'high' if phash_similarity > (self.image_threshold + 0.1) else 'medium'
                     similar_proofs.append(similarity_data)
-            
+
             # Comparaison de texte
-            elif (file_analysis['content_type'] == 'text' and 
+            elif (file_analysis['content_type'] == 'text' and
                   proof.get('semantic_hash') and file_analysis.get('semantic_hash')):
-                
+
                 # Pour l'instant, on compare les hashes sémantiques
                 # Dans une version avancée, on pourrait comparer directement les embeddings
                 if file_analysis['semantic_hash'] == proof['semantic_hash']:
@@ -266,6 +266,17 @@ class FuzzyMatcher:
                     similarity_data['match_type'] = 'semantic_hash'
                     similarity_data['confidence'] = 'high'
                     similar_proofs.append(similarity_data)
+                else:
+                    similarity = self.text_analyzer.compute_text_similarity(
+                        file_analysis.get('raw_text', ''),
+                        proof.get('raw_text', '')
+                    ) if file_analysis.get('raw_text') and proof.get('raw_text') else 0.0
+
+                    if similarity >= self.text_match_threshold:
+                        similarity_data['similarity_score'] = similarity
+                        similarity_data['match_type'] = 'text_similarity'
+                        similarity_data['confidence'] = 'medium'
+                        similar_proofs.append(similarity_data)
         
         # Trier par score de similarité
         similar_proofs.sort(key=lambda x: x['similarity_score'], reverse=True)
@@ -285,4 +296,4 @@ if __name__ == "__main__":
         analysis = analyze_file_for_proof(file_path)
         print(json.dumps(analysis, indent=2))
     else:
-        print("Usage: python fuzzy_matching.py <file_path>")
+        print("Usage: python -m prooforigin.services.fuzzy <file_path>")

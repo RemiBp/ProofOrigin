@@ -28,8 +28,8 @@ Toutes les avancées techniques demandées ont été implémentées avec succès
 - **✅ Export/import** portable
 
 ### 4. SDKs basiques
-- **✅ SDK Python** (`prooforigin_sdk.py`) - Intégration en 1-2 lignes
-- **✅ SDK JavaScript** (`prooforigin-sdk.js`) - Support Node.js et navigateur
+- **✅ SDK Python** (`sdks/python_sdk.py`) - Intégration en 1-2 lignes
+- **✅ SDK JavaScript** (`sdks/javascript_sdk.js`) - Support Node.js et navigateur
 - **✅ Documentation** complète avec exemples
 - **✅ Gestion d'erreurs** robuste
 
@@ -125,7 +125,7 @@ similarities/
 - **deploy.py** - Déploiement automatisé
 - **deploy_config.json** - Configuration production
 - **cron_anchor.py** - Ancrage quotidien
-- **verify_proof.py** - Vérification indépendante
+- **scripts/verify_proof.py** - Vérification indépendante
 
 ### Plateformes supportées
 - **Local** : Python + SQLite

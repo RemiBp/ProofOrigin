@@ -54,13 +54,22 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Générer les clés cryptographiques
-python generate_keys.py
+python scripts/generate_keys.py
 
-# Lancer l'application
-python app.py
+# Initialiser la base SQLite (optionnel, fait automatiquement au démarrage)
+python - <<'PY'
+from prooforigin.config import ProofOriginConfig
+from prooforigin.database import init_db
+cfg = ProofOriginConfig()
+init_db(cfg.database)
+print(f"Base initialisée: {cfg.database}")
+PY
+
+# Lancer l'application Flask
+python -m prooforigin
 ```
 
-L'application sera accessible sur `http://localhost:5000`
+L'application est disponible sur `http://localhost:5000` et charge automatiquement les templates depuis le package `prooforigin/`.
 
 ## 📖 Guide d'utilisation
 
@@ -88,9 +97,14 @@ curl -X POST -F "file=@document.pdf" http://localhost:5000/api/verify
 curl http://localhost:5000/api/proofs
 ```
 
+#### Récupérer une preuve par ID
+```bash
+curl http://localhost:5000/api/proofs/1
+```
+
 ### ⛓️ Ancrage blockchain
 
-Le script `blockchain_anchor.py` agrège les preuves des dernières 24 heures, calcule une racine de Merkle et l'ancre sur une blockchain compatible EVM.
+Le module `prooforigin.services.blockchain` agrège les preuves des dernières 24 heures, calcule une racine de Merkle et l'ancre sur une blockchain compatible EVM.
 
 - **Mode connecté** : fournissez l'URL RPC et la clé privée via les variables d'environnement `WEB3_RPC_URL` et `WEB3_PRIVATE_KEY`, ou via les options `--rpc-url` et `--private-key` pour signer et émettre une transaction réelle (EIP-1559). La signature du message et le hash de transaction sont enregistrés dans la table `anchors`.
 - **Mode simulation** : si les dépendances Web3 ne sont pas disponibles ou qu'aucune clé privée n'est fournie, le script reste fonctionnel en générant une transaction simulée tout en stockant la racine Merkle et une signature dérivée.
@@ -100,16 +114,16 @@ Exemple d'exécution quotidienne :
 ```bash
 WEB3_RPC_URL="https://polygon-rpc.com" \
 WEB3_PRIVATE_KEY="0x..." \
-python blockchain_anchor.py
+python -m prooforigin.services.blockchain --db instance/ledger.db
 ```
 
-Le script peut être planifié via cron (`run_daily_anchoring`) et expose également l'historique via l'endpoint `/api/anchors`.
+L'ancrage peut être planifié via cron (`run_daily_anchoring`) et piloté à la demande grâce à l'endpoint `/api/anchors/run` en POST. L'historique des ancrages reste disponible via `/api/anchors`.
 
 ### Vérification hors ligne
 
 ```bash
 # Vérifier un fichier avec sa preuve
-python verify_proof.py document.pdf proof_1_document.pdf.proof
+python scripts/verify_proof.py document.pdf proof_1_document.pdf.proof
 ```
 
 ## 🔧 Architecture technique
@@ -120,6 +134,26 @@ python verify_proof.py document.pdf proof_1_document.pdf.proof
 - **Cryptographie** : cryptography (RSA-2048, SHA-256)
 - **Frontend** : HTML5, CSS3, JavaScript (vanilla)
 - **API** : REST JSON
+
+### 📁 Structure du projet
+
+```
+prooforigin/
+├── prooforigin/               # Package principal (config, routes, services, templates)
+│   ├── services/              # Modules métiers (blockchain, fuzzy matching)
+│   ├── templates/             # Pages HTML (interface web)
+│   ├── app.py                 # Factory Flask
+│   └── ...
+├── scripts/                   # Utilitaires CLI (génération de clés, vérification)
+├── sdks/                      # SDK clients (Python & JavaScript)
+├── keys/                      # Paires de clés RSA (générées côté déploiement)
+├── instance/                  # Données runtime (base SQLite, exports temporaires)
+├── Procfile                   # Lancement Heroku/Render (`python -m prooforigin`)
+├── deploy.py                  # Script de déploiement automatisé
+└── README.md
+```
+
+Toutes les routes, services et filtres Jinja2 sont désormais regroupés dans le package Python, ce qui facilite les tests automatisés et le déploiement.
 
 ### Structure des données
 
@@ -161,7 +195,7 @@ python verify_proof.py document.pdf proof_1_document.pdf.proof
 
 ### Déploiement local
 ```bash
-python app.py
+python -m prooforigin
 ```
 
 ### Déploiement en production

@@ -3,7 +3,7 @@
   "host": "0.0.0.0",
   "port": 5000,
   "debug": false,
-  "database_url": "sqlite:///ledger.db",
+  "database_url": "sqlite:///instance/ledger.db",
   "blockchain": {
     "rpc_url": "https://polygon-rpc.com",
     "private_key": null,
