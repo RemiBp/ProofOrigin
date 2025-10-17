@@ -61,9 +61,16 @@ def init_db():
             proof_count INTEGER,
             transaction_hash TEXT,
             timestamp REAL,
+            anchor_signature TEXT,
             created_at REAL DEFAULT (strftime('%s', 'now'))
         )
     """)
+
+    # S'assurer que la colonne anchor_signature existe même sur une base plus ancienne
+    c.execute("PRAGMA table_info(anchors)")
+    anchor_columns = [row[1] for row in c.fetchall()]
+    if 'anchor_signature' not in anchor_columns:
+        c.execute("ALTER TABLE anchors ADD COLUMN anchor_signature TEXT")
     
     # Table des similarités détectées
     c.execute("""
@@ -138,8 +145,16 @@ def register():
         c = conn.cursor()
         
         # Récupérer les preuves existantes pour la comparaison
-        c.execute("SELECT id, phash, semantic_hash FROM proofs")
-        existing_proofs = [{'id': row[0], 'phash': row[1], 'semantic_hash': row[2]} for row in c.fetchall()]
+        c.execute("SELECT id, filename, phash, semantic_hash FROM proofs")
+        existing_proofs = [
+            {
+                'id': row[0],
+                'filename': row[1],
+                'phash': row[2],
+                'semantic_hash': row[3]
+            }
+            for row in c.fetchall()
+        ]
         
         similar_proofs = matcher.find_similar_content(analysis, existing_proofs)
         
@@ -387,7 +402,11 @@ def api_list_anchors():
     """API endpoint to list blockchain anchors"""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT date, merkle_root, proof_count, transaction_hash, timestamp FROM anchors ORDER BY timestamp DESC")
+    c.execute("""
+        SELECT date, merkle_root, proof_count, transaction_hash, timestamp, anchor_signature
+        FROM anchors
+        ORDER BY timestamp DESC
+    """)
     anchors = c.fetchall()
     conn.close()
     
@@ -398,7 +417,8 @@ def api_list_anchors():
                 "merkle_root": a[1],
                 "proof_count": a[2],
                 "transaction_hash": a[3],
-                "timestamp": a[4]
+                "timestamp": a[4],
+                "anchor_signature": a[5] if len(a) > 5 else None
             }
             for a in anchors
         ],

@@ -4,12 +4,22 @@ Système d'ancrage des preuves sur blockchain publique
 """
 
 import hashlib
-import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 import sqlite3
 import os
+
+try:
+    from web3 import Web3
+    from web3.middleware import geth_poa_middleware
+    from eth_account import Account
+    from eth_account.messages import encode_defunct
+except ImportError:
+    Web3 = None
+    Account = None
+    encode_defunct = None
+    geth_poa_middleware = None
 
 class MerkleTree:
     """Arbre de Merkle pour l'agrégation des preuves"""
@@ -70,25 +80,48 @@ class BlockchainAnchor:
     """Système d'ancrage sur blockchain"""
     
     def __init__(self, rpc_url: str = None, private_key: str = None):
-        self.rpc_url = rpc_url or "https://polygon-rpc.com"  # Polygon par défaut
-        self.private_key = private_key
+        self.rpc_url = rpc_url or os.getenv("WEB3_RPC_URL") or "https://polygon-rpc.com"
+        self.private_key = private_key or os.getenv("WEB3_PRIVATE_KEY")
         self.w3 = None
         self.account = None
-        
-        if rpc_url and private_key:
+        self.chain_id = None
+
+        if self.private_key:
             self.setup_web3()
-    
+        else:
+            print("ℹ️ Aucune clé privée fournie - mode simulation activé")
+
     def setup_web3(self):
         """Configure la connexion Web3 (version simplifiée)"""
+        if Web3 is None or Account is None:
+            print("⚠️ web3.py indisponible, activation du mode simulation")
+            return
+
         try:
-            # Version simplifiée sans Web3 pour les tests
+            self.w3 = Web3(Web3.HTTPProvider(self.rpc_url, request_kwargs={"timeout": 10}))
+
+            if not self.w3.is_connected():
+                raise ConnectionError(f"Impossible de se connecter à {self.rpc_url}")
+
+            # Injecter le middleware POA pour les réseaux type Polygon/PoA
+            if geth_poa_middleware is not None:
+                try:
+                    self.w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+                except ValueError:
+                    # Middleware déjà injecté
+                    pass
+
+            self.account = Account.from_key(self.private_key)
+            self.chain_id = self.w3.eth.chain_id
+
+            print(f"✅ Connecté à {self.rpc_url} (chain_id={self.chain_id})")
+            print(f"👤 Compte d'ancrage: {self.account.address}")
+        except Exception as e:
+            print(f"❌ Erreur de configuration Web3: {e}")
             self.w3 = None
             self.account = None
-            print(f"✅ Mode simulation activé pour {self.rpc_url}")
-            print(f"📧 Mode: Simulation blockchain")
-        except Exception as e:
-            print(f"❌ Erreur de configuration: {e}")
-    
+            self.chain_id = None
+
     def get_daily_proofs(self, db_file: str = "ledger.db") -> List[Dict[str, Any]]:
         """Récupère toutes les preuves du jour"""
         conn = sqlite3.connect(db_file)
@@ -140,50 +173,98 @@ class BlockchainAnchor:
             'proofs': proofs
         }
     
+    def _sign_merkle_message(self, message: str) -> Optional[str]:
+        """Crée une signature du message d'ancrage"""
+        try:
+            if self.account and encode_defunct is not None:
+                signable_message = encode_defunct(text=message)
+                signed_message = self.account.sign_message(signable_message)
+                return signed_message.signature.hex()
+
+            if self.private_key:
+                # Signature simulée lorsque Web3 est indisponible
+                return hashlib.sha256(f"{message}:{self.private_key}".encode()).hexdigest()
+        except Exception as exc:
+            print(f"⚠️ Impossible de signer le message d'ancrage: {exc}")
+
+        return None
+
     def anchor_to_blockchain(self, merkle_data: Dict[str, Any]) -> Optional[str]:
         """Ancre la racine Merkle sur la blockchain"""
+        message = f"ProofOrigin Daily Root {merkle_data['date']}: {merkle_data['merkle_root']}"
+        signature = self._sign_merkle_message(message)
+        merkle_data['signature'] = signature
+
         if not self.w3 or not self.account:
             print("⚠️ Web3 non configuré, simulation d'ancrage")
             return self.simulate_anchoring(merkle_data)
-        
+
         try:
-            # Préparer la transaction
-            message = f"ProofOrigin Daily Root {merkle_data['date']}: {merkle_data['merkle_root']}"
-            
-            # Signer le message
-            signed_message = self.account.sign_message(message.encode())
-            
-            # Simuler l'envoi sur blockchain (dans un vrai déploiement, 
-            # on utiliserait un smart contract)
-            tx_hash = hashlib.sha256(
-                f"{message}:{signed_message.signature.hex()}:{int(time.time())}".encode()
-            ).hexdigest()
-            
+            message_hash = self.w3.keccak(text=message)
+            nonce = self.w3.eth.get_transaction_count(self.account.address)
+            gas_price = getattr(self.w3.eth, "gas_price", None)
+
+            tx: Dict[str, Any] = {
+                'chainId': self.chain_id or self.w3.eth.chain_id,
+                'nonce': nonce,
+                'to': self.account.address,
+                'value': 0,
+                'data': message_hash,
+                'gas': 100000,
+            }
+
+            if gas_price is not None:
+                tx['gasPrice'] = gas_price
+            else:
+                # Fallback pour EIP-1559 si gas_price indisponible
+                base_fee = self.w3.eth.get_block('latest').baseFeePerGas
+                priority_fee = self.w3.to_wei('2', 'gwei')
+                tx['maxFeePerGas'] = base_fee + priority_fee
+                tx['maxPriorityFeePerGas'] = priority_fee
+
+            signed_tx = self.account.sign_transaction(tx)
+            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+
             print(f"🔗 Racine Merkle ancrée: {merkle_data['merkle_root'][:16]}...")
-            print(f"📝 Transaction: {tx_hash}")
-            
-            return tx_hash
-            
+            print(f"📝 Transaction envoyée: {tx_hash.hex()}")
+            print(f"📬 Statut de la transaction: {receipt.status}")
+
+            return tx_hash.hex()
+
         except Exception as e:
             print(f"❌ Erreur d'ancrage: {e}")
-            return None
-    
+            print("🧪 Retour au mode simulation pour cette exécution")
+            return self.simulate_anchoring(merkle_data)
+
     def simulate_anchoring(self, merkle_data: Dict[str, Any]) -> str:
         """Simule l'ancrage pour les tests"""
+        if not merkle_data.get('signature'):
+            merkle_data['signature'] = hashlib.sha256(
+                f"{merkle_data['merkle_root']}:{merkle_data['timestamp']}".encode()
+            ).hexdigest()
+
         tx_hash = hashlib.sha256(
             f"{merkle_data['merkle_root']}:{merkle_data['timestamp']}".encode()
         ).hexdigest()
-        
+
         print(f"🧪 SIMULATION - Racine Merkle: {merkle_data['merkle_root'][:16]}...")
         print(f"🧪 SIMULATION - Transaction: {tx_hash}")
         
         return tx_hash
     
+    def _ensure_anchor_signature_column(self, cursor):
+        """Ajoute la colonne anchor_signature si elle est absente"""
+        cursor.execute("PRAGMA table_info(anchors)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'anchor_signature' not in columns:
+            cursor.execute("ALTER TABLE anchors ADD COLUMN anchor_signature TEXT")
+
     def save_anchor_record(self, merkle_data: Dict[str, Any], tx_hash: str, db_file: str = "ledger.db"):
         """Sauvegarde l'enregistrement d'ancrage"""
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
-        
+
         # Créer la table des ancrages si elle n'existe pas
         c.execute("""
             CREATE TABLE IF NOT EXISTS anchors (
@@ -193,20 +274,24 @@ class BlockchainAnchor:
                 proof_count INTEGER,
                 transaction_hash TEXT,
                 timestamp REAL,
+                anchor_signature TEXT,
                 created_at REAL DEFAULT (strftime('%s', 'now'))
             )
         """)
-        
+
+        self._ensure_anchor_signature_column(c)
+
         try:
             c.execute("""
-                INSERT INTO anchors (date, merkle_root, proof_count, transaction_hash, timestamp)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO anchors (date, merkle_root, proof_count, transaction_hash, timestamp, anchor_signature)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 merkle_data['date'],
                 merkle_data['merkle_root'],
                 merkle_data['proof_count'],
                 tx_hash,
-                merkle_data['timestamp']
+                merkle_data['timestamp'],
+                merkle_data.get('signature')
             ))
             conn.commit()
             print(f"💾 Ancrage sauvegardé pour {merkle_data['date']}")
@@ -221,21 +306,23 @@ class BlockchainAnchor:
         c = conn.cursor()
         
         c.execute("""
-            SELECT date, merkle_root, proof_count, transaction_hash, timestamp
-            FROM anchors 
+            SELECT date, merkle_root, proof_count, transaction_hash, timestamp, anchor_signature
+            FROM anchors
             ORDER BY timestamp DESC
         """)
-        
+
         anchors = []
         for row in c.fetchall():
+            anchor_signature = row[5] if len(row) > 5 else None
             anchors.append({
                 'date': row[0],
                 'merkle_root': row[1],
                 'proof_count': row[2],
                 'transaction_hash': row[3],
-                'timestamp': row[4]
+                'timestamp': row[4],
+                'anchor_signature': anchor_signature
             })
-        
+
         conn.close()
         return anchors
     
@@ -267,6 +354,7 @@ class BlockchainAnchor:
         conn.close()
         
         if anchor_row:
+            anchor_signature = anchor_row[6] if len(anchor_row) > 6 else None
             return {
                 'verified': True,
                 'proof': proof,
@@ -274,7 +362,8 @@ class BlockchainAnchor:
                     'date': anchor_row[1],
                     'merkle_root': anchor_row[2],
                     'proof_count': anchor_row[3],
-                    'transaction_hash': anchor_row[4]
+                    'transaction_hash': anchor_row[4],
+                    'anchor_signature': anchor_signature
                 }
             }
         else:

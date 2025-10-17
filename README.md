@@ -88,6 +88,23 @@ curl -X POST -F "file=@document.pdf" http://localhost:5000/api/verify
 curl http://localhost:5000/api/proofs
 ```
 
+### ⛓️ Ancrage blockchain
+
+Le script `blockchain_anchor.py` agrège les preuves des dernières 24 heures, calcule une racine de Merkle et l'ancre sur une blockchain compatible EVM.
+
+- **Mode connecté** : fournissez l'URL RPC et la clé privée via les variables d'environnement `WEB3_RPC_URL` et `WEB3_PRIVATE_KEY`, ou via les options `--rpc-url` et `--private-key` pour signer et émettre une transaction réelle (EIP-1559). La signature du message et le hash de transaction sont enregistrés dans la table `anchors`.
+- **Mode simulation** : si les dépendances Web3 ne sont pas disponibles ou qu'aucune clé privée n'est fournie, le script reste fonctionnel en générant une transaction simulée tout en stockant la racine Merkle et une signature dérivée.
+
+Exemple d'exécution quotidienne :
+
+```bash
+WEB3_RPC_URL="https://polygon-rpc.com" \
+WEB3_PRIVATE_KEY="0x..." \
+python blockchain_anchor.py
+```
+
+Le script peut être planifié via cron (`run_daily_anchoring`) et expose également l'historique via l'endpoint `/api/anchors`.
+
 ### Vérification hors ligne
 
 ```bash
