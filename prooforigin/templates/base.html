@@ -453,13 +453,13 @@
                     <div class="logo-text">ProofOrigin</div>
                 </a>
                 <nav class="nav">
-                    <a href="/" class="nav-link {% if request.endpoint == 'home' %}active{% endif %}">
+                    <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">
                         <i class="fas fa-home"></i>
                         Accueil
                     </a>
-                    <a href="/list" class="nav-link {% if request.endpoint == 'list_proofs' %}active{% endif %}">
-                        <i class="fas fa-list"></i>
-                        Registre
+                    <a href="/dashboard" class="nav-link {% if request.url.path == '/dashboard' %}active{% endif %}">
+                        <i class="fas fa-gauge"></i>
+                        Tableau de bord
                     </a>
                 </nav>
             </div>

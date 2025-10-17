@@ -4,21 +4,21 @@ ProofOrigin - Script de vérification indépendant
 Vérifie l'authenticité d'un fichier à partir d'une preuve .proof
 
 Usage:
-    python verify_proof.py <fichier_original> <fichier_preuve.proof>
+    python scripts/verify_proof.py <fichier_original> <fichier_preuve.proof>
 
 Exemple:
-    python verify_proof.py document.pdf proof_1_document.pdf.proof
+    python scripts/verify_proof.py document.pdf proof_1_document.pdf.proof
 """
 
 import sys
 import json
 import hashlib
 import time
-from datetime import datetime
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.backends import default_backend
 from base64 import b64decode
+from datetime import datetime
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ed25519
 
 def compute_file_hash(filepath):
     """Calcule le hash SHA-256 d'un fichier"""
@@ -63,28 +63,18 @@ def load_proof(proof_path):
         print(f"❌ Erreur lors du chargement de la preuve: {e}")
         return None
 
-def verify_signature(hash_value, signature_b64, public_key_pem):
-    """Vérifie la signature RSA"""
+def verify_signature(hash_value, signature_b64, public_key_info):
+    """Vérifie la signature Ed25519."""
     try:
-        # Charger la clé publique
-        public_key = serialization.load_pem_public_key(
-            public_key_pem.encode(),
-            backend=default_backend()
-        )
-        
-        # Décoder la signature
+        public_key_pem = public_key_info.get('public_key_pem') if isinstance(public_key_info, dict) else public_key_info
+        if not public_key_pem:
+            raise ValueError("Clé publique absente")
+        public_key = serialization.load_pem_public_key(public_key_pem.encode())
+        if not isinstance(public_key, ed25519.Ed25519PublicKey):
+            raise ValueError("La clé publique n'est pas Ed25519")
+
         signature = b64decode(signature_b64)
-        
-        # Vérifier la signature
-        public_key.verify(
-            signature,
-            bytes.fromhex(hash_value),
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
+        public_key.verify(signature, bytes.fromhex(hash_value))
         return True
     except Exception as e:
         print(f"❌ Erreur de vérification de signature: {e}")
@@ -99,9 +89,9 @@ def format_timestamp(timestamp):
 
 def main():
     if len(sys.argv) != 3:
-        print("Usage: python verify_proof.py <fichier_original> <fichier_preuve.proof>")
+        print("Usage: python scripts/verify_proof.py <fichier_original> <fichier_preuve.proof>")
         print("\nExemple:")
-        print("  python verify_proof.py document.pdf proof_1_document.pdf.proof")
+        print("  python scripts/verify_proof.py document.pdf proof_1_document.pdf.proof")
         sys.exit(1)
     
     file_path = sys.argv[1]

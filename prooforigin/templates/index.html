@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}ProofOrigin - Authentifiez vos contenus{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1 class="hero-title">ProofOrigin</h1>
+    <p class="hero-subtitle">
+        Enregistrez, vérifiez et suivez l'origine de vos contenus en quelques secondes grâce à notre API sécurisée.
+    </p>
+</section>
+
+<div class="grid grid-3" style="margin-top: 2rem;">
+    <div class="card" id="register-card">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-user-plus"></i> Créer un compte</h2>
+            <p class="card-subtitle">Générez une paire de clés Ed25519 sécurisée</p>
+        </div>
+        <div class="card-body">
+            <form id="register-form">
+                <div class="form-group">
+                    <label class="form-label" for="register-email">Email</label>
+                    <input type="email" id="register-email" name="email" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="register-name">Nom d'affichage</label>
+                    <input type="text" id="register-name" name="display_name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="register-password">Mot de passe</label>
+                    <input type="password" id="register-password" name="password" class="form-input" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Créer le compte</button>
+            </form>
+            <div class="feedback" id="register-feedback"></div>
+        </div>
+    </div>
+
+    <div class="card" id="login-card">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-sign-in-alt"></i> Se connecter</h2>
+            <p class="card-subtitle">Obtenez un jeton d'accès pour l'API</p>
+        </div>
+        <div class="card-body">
+            <form id="login-form">
+                <div class="form-group">
+                    <label class="form-label" for="login-email">Email</label>
+                    <input type="email" id="login-email" name="email" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="login-password">Mot de passe</label>
+                    <input type="password" id="login-password" name="password" class="form-input" required>
+                </div>
+                <button type="submit" class="btn btn-secondary">Connexion</button>
+            </form>
+            <div class="feedback" id="login-feedback"></div>
+        </div>
+    </div>
+
+    <div class="card" id="usage-card">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-gauge"></i> Crédit & usage</h2>
+            <p class="card-subtitle">Visualisez vos quotas en temps réel</p>
+        </div>
+        <div class="card-body">
+            <p>Preuves générées : <strong id="usage-proofs">-</strong></p>
+            <p>Vérifications : <strong id="usage-verifications">-</strong></p>
+            <p>Crédits restants : <strong id="usage-credits">-</strong></p>
+            <button class="btn btn-success" id="refresh-usage">Actualiser</button>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 2rem;">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-file-shield"></i> Générer une preuve</h2>
+        <p class="card-subtitle">Téléversez un fichier et obtenez un artefact .proof signé</p>
+    </div>
+    <div class="card-body">
+        <form id="generate-form" enctype="multipart/form-data">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="generate-file">Fichier</label>
+                    <input type="file" id="generate-file" name="file" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="generate-password">Mot de passe de clé</label>
+                    <input type="password" id="generate-password" name="key_password" class="form-input" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="generate-metadata">Métadonnées (JSON)</label>
+                <textarea id="generate-metadata" class="form-input" rows="4">{"title": "", "description": "", "tags": []}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Créer la preuve</button>
+        </form>
+        <pre class="code-block" id="generate-result"></pre>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 2rem;">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-magnifying-glass"></i> Vérifier une preuve</h2>
+        <p class="card-subtitle">Vérifiez la signature via l'API</p>
+    </div>
+    <div class="card-body">
+        <form id="verify-form">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="verify-id">Identifiant de preuve</label>
+                    <input type="text" id="verify-id" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="verify-signature">Signature (optionnel)</label>
+                    <input type="text" id="verify-signature" class="form-input">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-secondary">Vérifier</button>
+        </form>
+        <pre class="code-block" id="verify-result"></pre>
+    </div>
+</div>
+
+<script>
+const state = {
+    accessToken: localStorage.getItem('prooforigin_access') || null,
+    refreshToken: localStorage.getItem('prooforigin_refresh') || null,
+};
+
+function setTokens(access, refresh) {
+    state.accessToken = access;
+    state.refreshToken = refresh;
+    localStorage.setItem('prooforigin_access', access);
+    localStorage.setItem('prooforigin_refresh', refresh);
+}
+
+async function request(url, options = {}) {
+    const headers = options.headers || {};
+    if (state.accessToken) {
+        headers['Authorization'] = `Bearer ${state.accessToken}`;
+    }
+    options.headers = headers;
+    const response = await fetch(url, options);
+    if (response.status === 401 && state.refreshToken) {
+        const refresh = await fetch('/api/v1/token/refresh', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ refresh_token: state.refreshToken })
+        });
+        if (refresh.ok) {
+            const data = await refresh.json();
+            setTokens(data.access_token, data.refresh_token);
+            headers['Authorization'] = `Bearer ${state.accessToken}`;
+            return fetch(url, options);
+        }
+    }
+    return response;
+}
+
+document.getElementById('register-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const payload = {
+        email: form.email.value,
+        password: form.password.value,
+        display_name: form.display_name.value,
+    };
+    const response = await fetch('/api/v1/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const feedback = document.getElementById('register-feedback');
+    if (response.ok) {
+        const data = await response.json();
+        feedback.textContent = `✅ Compte créé pour ${data.email}. Crédit initial : ${data.credits}`;
+    } else {
+        const error = await response.json();
+        feedback.textContent = `❌ ${error.detail || 'Erreur lors de la création du compte'}`;
+    }
+});
+
+document.getElementById('login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const payload = new URLSearchParams();
+    payload.append('username', form.email.value);
+    payload.append('password', form.password.value);
+    const response = await fetch('/api/v1/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: payload
+    });
+    const feedback = document.getElementById('login-feedback');
+    if (response.ok) {
+        const data = await response.json();
+        setTokens(data.access_token, data.refresh_token);
+        feedback.textContent = '✅ Authentification réussie. Vous pouvez maintenant générer des preuves.';
+        loadUsage();
+    } else {
+        const error = await response.json();
+        feedback.textContent = `❌ ${error.detail || 'Identifiants invalides'}`;
+    }
+});
+
+async function loadUsage() {
+    if (!state.accessToken) { return; }
+    const response = await request('/api/v1/usage');
+    if (!response.ok) { return; }
+    const data = await response.json();
+    document.getElementById('usage-proofs').textContent = data.proofs_generated;
+    document.getElementById('usage-verifications').textContent = data.verifications_performed;
+    document.getElementById('usage-credits').textContent = data.remaining_credits;
+}
+
+document.getElementById('refresh-usage').addEventListener('click', loadUsage);
+
+loadUsage();
+
+document.getElementById('generate-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.accessToken) {
+        alert('Veuillez vous authentifier d\'abord.');
+        return;
+    }
+    const form = event.target;
+    const formData = new FormData();
+    formData.append('file', form.file.files[0]);
+    formData.append('key_password', form.key_password.value);
+    formData.append('metadata', form.querySelector('#generate-metadata').value);
+
+    const response = await request('/api/v1/generate_proof', {
+        method: 'POST',
+        body: formData,
+    });
+    const result = document.getElementById('generate-result');
+    if (response.ok) {
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+        loadUsage();
+    } else {
+        const error = await response.json();
+        result.textContent = `Erreur: ${error.detail || 'Impossible de créer la preuve'}`;
+    }
+});
+
+document.getElementById('verify-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = {
+        proof_id: event.target.querySelector('#verify-id').value,
+        signature: event.target.querySelector('#verify-signature').value || null,
+    };
+    const response = await fetch('/api/v1/verify_proof', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const result = document.getElementById('verify-result');
+    if (response.ok) {
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+    } else {
+        const error = await response.json();
+        result.textContent = `Erreur: ${error.detail || 'Vérification impossible'}`;
+    }
+});
+</script>
+{% endblock %}

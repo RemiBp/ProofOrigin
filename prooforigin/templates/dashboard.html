@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord - ProofOrigin{% endblock %}
+{% block content %}
+<section class="hero" style="margin-bottom: 1.5rem;">
+    <h1 class="hero-title">Tableau de bord</h1>
+    <p class="hero-subtitle">Visualisez vos preuves, leur statut d'ancrage et les correspondances détectées.</p>
+</section>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-database"></i> Vos preuves</h2>
+        <p class="card-subtitle">Les 25 dernières entrées du registre personnel.</p>
+    </div>
+    <div class="card-body">
+        <table class="table" id="proofs-table">
+            <thead>
+                <tr>
+                    <th>Identifiant</th>
+                    <th>Fichier</th>
+                    <th>Date</th>
+                    <th>Blockchain</th>
+                    <th>Matches</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div class="feedback" id="dashboard-feedback"></div>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('prooforigin_access');
+if (!token) {
+    document.getElementById('dashboard-feedback').textContent = 'Connectez-vous sur la page d\'accueil pour charger vos preuves.';
+} else {
+    fetch('/api/v1/user/proofs?page=1&page_size=25', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    }).then(async (response) => {
+        const tbody = document.querySelector('#proofs-table tbody');
+        tbody.innerHTML = '';
+        if (!response.ok) {
+            const error = await response.json();
+            document.getElementById('dashboard-feedback').textContent = error.detail || 'Impossible de récupérer les preuves.';
+            return;
+        }
+        const data = await response.json();
+        data.items.forEach((item) => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><code>${item.id}</code></td>
+                <td>${item.file_name || '—'}<br><small>${item.mime_type || ''}</small></td>
+                <td>${new Date(item.created_at).toLocaleString()}</td>
+                <td>${item.blockchain_tx ? `<a href="${item.blockchain_tx}" target="_blank">Ancré</a>` : 'En attente'}</td>
+                <td>${item.matches.length}</td>`;
+            tbody.appendChild(row);
+        });
+    }).catch(() => {
+        document.getElementById('dashboard-feedback').textContent = 'Erreur réseau lors de la récupération des preuves.';
+    });
+}
+</script>
+{% endblock %}
