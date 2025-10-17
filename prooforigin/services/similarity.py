@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from prooforigin.core import models
 from prooforigin.core.logging import get_logger
 from prooforigin.core.settings import Settings, get_settings
+from prooforigin.services.vector_store import VectorStore
 
 logger = get_logger(__name__)
 
@@ -47,6 +48,61 @@ def _load_clip_model(model_name: str):  # pragma: no cover - heavy dependency
 class SimilarityEngine:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
+        self._vector_stores: dict[str, VectorStore] = {}
+
+    # Vector store helpers -------------------------------------------------
+    def _get_vector_store(self, vector_type: str, dimension: int | None = None) -> VectorStore | None:
+        if not self.settings.enable_faiss:
+            return None
+        store = self._vector_stores.get(vector_type)
+        if store is None:
+            default_dimension = {
+                "clip": 512,
+                "text": 384,
+                "phash": 64,
+            }.get(vector_type, 256)
+            store = VectorStore(
+                self.settings.faiss_index_path.with_suffix(f".{vector_type}.index"),
+                dimension or default_dimension,
+            )
+            if not store.is_available():
+                return None
+            self._vector_stores[vector_type] = store
+        return store
+
+    def _refresh_vector_store(self, db: Session, vector_type: str) -> None:
+        if not self.settings.enable_faiss:
+            return
+        vector_column = {
+            "clip": models.Proof.image_embedding,
+            "text": models.Proof.text_embedding,
+            "phash": models.SimilarityIndex.vector,
+        }.get(vector_type)
+        if vector_column is None:
+            return
+        if vector_type == "phash":
+            vectors = (
+                db.query(models.SimilarityIndex.proof_id, models.SimilarityIndex.vector)
+                .filter(models.SimilarityIndex.vector_type == "phash")
+                .all()
+            )
+        else:
+            vectors = (
+                db.query(models.Proof.id, vector_column)
+                .filter(vector_column.isnot(None))
+                .all()
+            )
+        if not vectors:
+            return
+        dimension = len(vectors[0][1])
+        store = self._get_vector_store(vector_type, dimension)
+        if store is None:
+            return
+        store.reset()
+        store.add_vectors(
+            [str(entry[0]) for entry in vectors],
+            [entry[1] for entry in vectors],
+        )
 
     def compute_image_hashes(
         self, file_path: Path
@@ -195,6 +251,14 @@ class SimilarityEngine:
             )
         db.flush()
 
+        if self.settings.enable_faiss:
+            if proof.image_embedding:
+                self._refresh_vector_store(db, "clip")
+            if proof.text_embedding:
+                self._refresh_vector_store(db, "text")
+            if perceptual_vector:
+                self._refresh_vector_store(db, "phash")
+
     def update_similarity_matches(
         self, db: Session, proof: models.Proof, top_k: int = 5
     ) -> list[dict[str, float | str | dict[str, float]]]:
@@ -239,6 +303,19 @@ class SimilarityEngine:
                 )
         db.flush()
         return matches
+
+    def query_vector_store(
+        self,
+        vector_type: str,
+        query_vector: list[float] | None,
+        top_k: int = 5,
+    ) -> list[str]:
+        if not query_vector:
+            return []
+        store = self._vector_stores.get(vector_type)
+        if not store:
+            return []
+        return [item[0] for item in store.query(query_vector, top_k=top_k)]
 
 
 __all__ = ["SimilarityEngine"]

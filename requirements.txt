@@ -15,3 +15,7 @@ imagehash==4.3.1
 numpy==2.1.2
 sentence-transformers==3.1.1
 requests==2.31.0
+jsonschema==4.22.0
+celery==5.4.0
+redis==5.0.1
+faiss-cpu==1.7.4.post2; platform_system != "Windows"

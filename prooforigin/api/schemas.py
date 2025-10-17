@@ -177,6 +177,20 @@ class AdminProofSummary(BaseModel):
     suspicious_matches: int
 
 
+class WebhookSubscriptionCreate(BaseModel):
+    target_url: str
+    event: str
+    secret: str | None = None
+
+
+class WebhookSubscriptionResponse(BaseModel):
+    id: int
+    target_url: str
+    event: str
+    created_at: datetime
+    is_active: bool
+
+
 __all__ = [
     "TokenResponse",
     "RefreshRequest",
@@ -201,4 +215,6 @@ __all__ = [
     "LedgerEntryResponse",
     "AdminUserSummary",
     "AdminProofSummary",
+    "WebhookSubscriptionCreate",
+    "WebhookSubscriptionResponse",
 ]

@@ -1,6 +1,8 @@
 """Proof management routes."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import hashlib
 import json
 import shutil
@@ -11,7 +13,6 @@ from pathlib import Path
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -28,12 +29,16 @@ from prooforigin.core import models
 from prooforigin.core.logging import get_logger
 from prooforigin.core.security import decrypt_private_key, export_public_key, sign_hash, verify_signature
 from prooforigin.core.settings import get_settings
+from prooforigin.core.metadata import validate_metadata
 from prooforigin.services.similarity import SimilarityEngine
+from prooforigin.services.webhooks import queue_event
+from prooforigin.tasks.queue import get_task_queue
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["proofs"])
 settings = get_settings()
 similarity_engine = SimilarityEngine(settings)
+task_queue = get_task_queue()
 
 
 def _save_upload_to_temp(upload: UploadFile) -> Path:
@@ -50,9 +55,12 @@ def _parse_metadata(metadata_raw: str | None) -> dict:
     if not metadata_raw:
         return {}
     try:
-        return json.loads(metadata_raw)
+        payload = json.loads(metadata_raw)
+        return validate_metadata(payload)
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid metadata JSON") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _user_can_spend(user: models.User) -> None:
@@ -60,13 +68,10 @@ def _user_can_spend(user: models.User) -> None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
 
 
-def _schedule_anchor_task(background_tasks: BackgroundTasks, proof_id: uuid.UUID) -> None:
+def _schedule_anchor_task(proof_id: uuid.UUID) -> None:
     if not settings.blockchain_enabled:
         return
-
-    from prooforigin.services.blockchain import schedule_anchor
-
-    background_tasks.add_task(schedule_anchor, proof_id)
+    task_queue.enqueue("prooforigin.anchor_proof", str(proof_id))
 
 
 def _assign_to_anchor_batch(db: Session, proof: models.Proof) -> None:
@@ -132,7 +137,6 @@ def _build_evidence_pack(
 
 @router.post("/generate_proof", response_model=schemas.ProofResponse)
 async def generate_proof(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     metadata: str | None = Form(default=None),
     key_password: str = Form(...),
@@ -241,7 +245,17 @@ async def generate_proof(
     db.commit()
     db.refresh(proof)
 
-    _schedule_anchor_task(background_tasks, proof.id)
+    _schedule_anchor_task(proof.id)
+    queue_event(
+        current_user.id,
+        "proof.generated",
+        {
+            "proof_id": str(proof.id),
+            "file_hash": proof.file_hash,
+            "created_at": proof.created_at.isoformat(),
+        },
+    )
+    task_queue.enqueue("prooforigin.reindex_similarity", str(proof.id))
 
     return schemas.ProofResponse(
         id=proof.id,
@@ -292,6 +306,16 @@ def verify_proof(
     )
     db.commit()
 
+    queue_event(
+        proof.user_id,
+        "proof.verified",
+        {
+            "proof_id": str(proof.id),
+            "verified_at": datetime.utcnow().isoformat(),
+            "valid_signature": valid_signature,
+        },
+    )
+
     return schemas.VerifyResult(
         valid_signature=valid_signature,
         original_hash=proof.file_hash,
@@ -333,6 +357,16 @@ async def verify_proof_with_file(
         )
     )
     db.commit()
+
+    queue_event(
+        proof.user_id,
+        "proof.verified",
+        {
+            "proof_id": str(proof.id),
+            "verified_at": datetime.utcnow().isoformat(),
+            "valid_signature": valid_signature,
+        },
+    )
 
     return schemas.VerifyResult(
         valid_signature=valid_signature,
@@ -431,19 +465,36 @@ async def search_similar(
     db: Session = Depends(get_db),
 ) -> list[dict[str, object]]:
     query = db.query(models.Proof).filter(models.Proof.user_id == current_user.id)
-    candidate_proofs = query.all()
+    candidate_proofs: list[models.Proof]
 
     phash = dhash = None
     perceptual_vector = None
     clip_vector = None
     text_embedding = None
 
+    candidate_ids: set[uuid.UUID] = set()
+
     if file:
         temp_path = _save_upload_to_temp(file)
         phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
+        for candidate in similarity_engine.query_vector_store("clip", clip_vector, top_k=payload.top_k * 3):
+            try:
+                candidate_ids.add(uuid.UUID(candidate))
+            except ValueError:
+                continue
 
     if payload.text:
         text_embedding = similarity_engine.compute_text_embedding(payload.text)
+        for candidate in similarity_engine.query_vector_store("text", text_embedding, top_k=payload.top_k * 3):
+            try:
+                candidate_ids.add(uuid.UUID(candidate))
+            except ValueError:
+                continue
+
+    if candidate_ids:
+        candidate_proofs = query.filter(models.Proof.id.in_(candidate_ids)).all()
+    else:
+        candidate_proofs = query.all()
 
     dummy_proof = models.Proof(
         id=uuid.uuid4(),
@@ -456,7 +507,17 @@ async def search_similar(
         text_embedding=text_embedding,
     )
 
-    return similarity_engine.build_similarity_payload(dummy_proof, candidate_proofs, top_k=payload.top_k)
+    results = similarity_engine.build_similarity_payload(dummy_proof, candidate_proofs, top_k=payload.top_k)
+    queue_event(
+        current_user.id,
+        "similarity.requested",
+        {
+            "proof_id": payload.proof_id and str(payload.proof_id),
+            "matches": len(results),
+            "requested_at": datetime.utcnow().isoformat(),
+        },
+    )
+    return results
 
 
 @router.post("/batch-verify", response_model=schemas.BatchVerifyResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -473,6 +534,18 @@ def batch_verify(
     )
     db.add(job)
     db.commit()
+    db.refresh(job)
+
+    queue_event(
+        current_user.id,
+        "batch.verify_requested",
+        {
+            "job_id": str(job.id),
+            "proof_ids": [str(pid) for pid in payload.proof_ids],
+            "requested_at": job.created_at.isoformat(),
+            "webhook": payload.webhook_url,
+        },
+    )
 
     return schemas.BatchVerifyResponse(job_id=job.id, status=job.status)
 
@@ -510,6 +583,17 @@ def create_report(
     db.add(report)
     db.commit()
     db.refresh(report)
+
+    queue_event(
+        current_user.id,
+        "report.created",
+        {
+            "report_id": report.id,
+            "proof_id": payload.proof_id and str(payload.proof_id),
+            "match_id": payload.match_id,
+            "created_at": report.created_at.isoformat(),
+        },
+    )
     return schemas.ReportResponse(
         id=report.id,
         status=report.status,

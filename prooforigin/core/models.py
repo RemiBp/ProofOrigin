@@ -55,6 +55,9 @@ class User(Base):
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="user", cascade="all,delete")
     payments: Mapped[list["Payment"]] = relationship(back_populates="user", cascade="all,delete")
     reports: Mapped[list["Report"]] = relationship(back_populates="user", cascade="all,delete")
+    webhooks: Mapped[list["WebhookSubscription"]] = relationship(
+        back_populates="user", cascade="all,delete"
+    )
 
 
 class Proof(Base):
@@ -241,6 +244,41 @@ class BatchJob(Base):
     user: Mapped["User"] = relationship()
 
 
+class WebhookSubscription(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    target_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    secret: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    user: Mapped["User"] = relationship(back_populates="webhooks")
+    deliveries: Mapped[list["WebhookDelivery"]] = relationship(
+        back_populates="subscription", cascade="all,delete"
+    )
+
+
+class WebhookDelivery(Base):
+    __tablename__ = "webhook_deliveries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    subscription_id: Mapped[int] = mapped_column(
+        ForeignKey("webhook_subscriptions.id"), nullable=False
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONType)
+    status_code: Mapped[int | None]
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    delivered_at: Mapped[datetime | None]
+    next_retry_at: Mapped[datetime | None]
+
+    subscription: Mapped["WebhookSubscription"] = relationship(
+        back_populates="deliveries"
+    )
+
+
 class AnchorBatch(Base):
     __tablename__ = "anchor_batches"
 
@@ -280,4 +318,6 @@ __all__ = [
     "ProofRelation",
     "AnchorBatch",
     "KeyRevocation",
+    "WebhookSubscription",
+    "WebhookDelivery",
 ]

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
 
     # Similarity / ML
     enable_faiss: bool = False
+    faiss_index_path: Path = Field(
+        default_factory=lambda: Path.cwd() / "instance" / "faiss.index"
+    )
     sentence_transformer_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     clip_model_name: str = "sentence-transformers/clip-ViT-B-32"
 
@@ -44,8 +47,24 @@ class Settings(BaseSettings):
     # Blockchain anchoring
     blockchain_rpc_url: str | None = None
     blockchain_private_key: str | None = None
+    blockchain_chain_id: int | None = None
     blockchain_enabled: bool = False
     anchor_batch_size: int = 10
+    anchor_retry_limit: int = 3
+    anchor_poll_interval_seconds: int = 15
+
+    # Task queue
+    task_queue_backend: Literal["inline", "celery"] = "inline"
+    celery_broker_url: str | None = None
+    celery_result_backend: str | None = None
+
+    # Webhooks / notifications
+    webhook_retry_max: int = 5
+    webhook_retry_backoff_seconds: int = 30
+    webhook_hmac_secret: str | None = None
+
+    # Metadata validation
+    metadata_schema_path: Path | None = None
 
     # Rate limiting / monitoring
     rate_limit_requests: int = 100
