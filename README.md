@@ -6,11 +6,12 @@ ProofOrigin fournit une chaîne complète pour prouver l'origine de contenus num
 
 | Domaine | Capacités |
 | --- | --- |
-| 🔐 **Sécurité & identité** | Enregistrement utilisateur avec Argon2id, génération de paires Ed25519 chiffrées, rotation de clé, JWT court + refresh token, artefacts `.proof` exportables. |
-| 📄 **Gestion de preuves** | Endpoint multipart `generate_proof`, signature Ed25519, stockage hash SHA-256, génération automatique d'artefacts, journalisation d'usage et décrément des crédits. |
-| 🔍 **Similarité & indexation** | pHash/dHash basés sur `imagehash`, embeddings SBERT (`sentence-transformers`) pour le texte, moteur hybride (cosine + Hamming), API `search-similar` et stockage des matches. |
-| 💳 **Facturation** | Intégration Stripe (ou simulation si clé absente), suivi des crédits, endpoint `usage` pour la consommation, modèle de crédits extensible. |
-| ⛓️ **Ancrage blockchain** | Service `schedule_anchor` qui signe les preuves (simulation ou envoi Web3) et renseigne transaction + horodatage. |
+| 🔐 **Sécurité & identité** | Inscription avec Argon2id, génération Ed25519 chiffrée (AES-256-GCM + master key), rotation de clé (`/rotate-key` + révocation), vérification e-mail, JWT court + refresh token, artefacts `.proof`. |
+| 📄 **Gestion de preuves** | Endpoint multipart `generate_proof`, signature Ed25519, stockage hash SHA-256, attribution automatique à un batch d'ancrage, journalisation d'usage et décrément des crédits. |
+| 🔍 **Similarité & indexation** | pHash/dHash (`imagehash`), embeddings SBERT + CLIP (`sentence-transformers`), index JSON `similarity_index`, moteur hybride cosinus/Hamming, API `search-similar`, création d'alertes & relations de preuves. |
+| 💳 **Facturation** | Intégration Stripe (ou simulation), enregistrement des paiements/checkout sessions, suivi des crédits, endpoint `usage` avec prochaine fenêtre d'ancrage. |
+| ⛓️ **Ancrage blockchain** | Batching Merkle (`anchor_batches`), signature unique via Web3/simulation, mise à jour groupée des preuves (`blockchain_tx`, `anchor_signature`, `anchored_at`). |
+| 🧭 **Ledger & admin** | Endpoint `/ledger/{id}` avec détails complet, exports d'evidence pack (`/report`), API `/admin` pour lister utilisateurs/proofs et suivre les matches suspects. |
 | 🛠️ **Ops & monitoring** | Endpoint `/healthz`, journalisation JSON (`structlog`), scripts CLI, export `.proof`, tableau de bord web minimaliste (inscription → génération → vérification). |
 
 ## 🚀 Démarrage rapide
@@ -47,13 +48,16 @@ Le serveur écoute sur `http://localhost:8000`. L'API interactive est disponible
 ## 🧭 Parcours utilisateur
 
 1. **Inscription** – `POST /api/v1/register` → génération de la paire Ed25519 chiffrée + crédit initial.
-2. **Connexion** – `POST /api/v1/login` (OAuth2 password) → réception `access_token` + `refresh_token`.
-3. **Génération de preuve** – `POST /api/v1/generate_proof` (multipart `file`, `metadata`, `key_password`). Retour JSON + artefact `.proof` stocké côté serveur.
-4. **Vérification** – `POST /api/v1/verify_proof` (JSON) ou `/api/v1/verify_proof/file` (multipart) → statut signature + ancrage.
-5. **Listing & détails** – `GET /api/v1/user/proofs` (pagination) & `GET /api/v1/proofs/{id}`.
-6. **Similarité** – `POST /api/v1/search-similar` (texte ou fichier) → top matches & métriques.
-7. **Quotas & facturation** – `GET /api/v1/usage`, `POST /api/v1/buy-credits` (Stripe ou mode démo).
-8. **Alertes & rapports** – `POST /api/v1/report`, `POST /api/v1/batch-verify` (jobs asynchrones + webhook).
+2. **Vérification e-mail** – `POST /api/v1/verify-email` (token reçu par mail simulé) ou `POST /api/v1/request-verification` pour renvoyer le lien.
+3. **Connexion** – `POST /api/v1/login` (OAuth2 password) → réception `access_token` + `refresh_token`.
+4. **Rotation/gestion de clé** – `POST /api/v1/rotate-key` ou `/api/v1/upload-key` pour remplacer la clé privée (revocation loggée).
+5. **Génération de preuve** – `POST /api/v1/generate_proof` (multipart `file`, `metadata`, `key_password`). Retour JSON + artefact `.proof` stocké côté serveur.
+6. **Vérification** – `POST /api/v1/verify_proof` (JSON) ou `/api/v1/verify_proof/file` (multipart) → statut signature + ancrage.
+7. **Listing & détails** – `GET /api/v1/user/proofs` (pagination) & `GET /api/v1/proofs/{id}` ou `/api/v1/ledger/{id}` pour la vue ledger complète.
+8. **Similarité** – `POST /api/v1/search-similar` (texte ou fichier) → top matches & métriques, création d'alertes/relations.
+9. **Quotas & facturation** – `GET /api/v1/usage`, `POST /api/v1/buy-credits` (Stripe ou mode démo).
+10. **Alertes & rapports** – `POST /api/v1/report` (génère un evidence pack zip), `POST /api/v1/batch-verify` (jobs asynchrones + webhook).
+11. **Administration** – `/api/v1/admin/users` & `/api/v1/admin/proofs` pour la modération et la supervision.
 
 Toutes les routes nécessitent HTTPS + `Authorization: Bearer` sauf inscription/connexion/vérification publique.
 
@@ -76,15 +80,16 @@ Le fichier JSON exporté (et enregistré à côté du fichier original) suit le 
 Le script `scripts/verify_proof.py` permet une validation hors ligne complète (hash + signature Ed25519).
 
 ## 🧠 Similarité & Indexation
-- **Images** : pHash/dHash via `imagehash` + vecteur binaire (utilisé pour la similarité Hamming).
+- **Images** : pHash/dHash via `imagehash` + embeddings CLIP (`sentence-transformers/clip-ViT-B-32`) pour une recherche perceptuelle et sémantique.
 - **Texte** : embeddings SBERT (`sentence-transformers`) et similarité cosinus.
-- **Pipeline** : lors de la génération d'une preuve, le moteur `SimilarityEngine` calcule les empreintes et alimente la table `similarity_matches`. L'API `search-similar` permet des requêtes ad-hoc.
-- **Vector DB** : la structure SQL (table `proofs` avec colonnes `image_embedding`/`text_embedding`) est prête pour l'intégration FAISS/Milvus ultérieure.
+- **Pipeline** : lors de la génération d'une preuve, `SimilarityEngine` calcule les empreintes, alimente `similarity_index`, crée les `similarity_matches`, relations (`proof_relations`) et alertes si score ≥ 0.8.
+- **Vector DB** : stockage JSON des embeddings (clip/text/phash) dans `similarity_index`, compatible avec une migration FAISS/Milvus ultérieure.
 
 ## 🔐 Gestion des clés
 - **Génération** : Ed25519 (libs `cryptography`).
 - **Chiffrement** : AES-256-GCM avec clé dérivée Argon2id (paramètres configurables) + master key serveur.
-- **Rotation** : endpoint `POST /api/v1/upload-key` (nécessite authentification + mot de passe).
+- **Rotation** : endpoints `POST /api/v1/rotate-key` (génération serveur + révocation enregistrée) ou `POST /api/v1/upload-key` (clé fournie par l'utilisateur).
+- **Vérification e-mail / KYC light** : `POST /api/v1/verify-email` + `POST /api/v1/request-verification` pour valider les comptes avant usage avancé.
 - **JWT** : signé HS256 avec TTL court (configurable) + refresh token 14 jours.
 
 ## 💳 Facturation & quotas
@@ -94,9 +99,9 @@ Le script `scripts/verify_proof.py` permet une validation hors ligne complète (
 - `GET /api/v1/usage` : expose preuves générées, vérifications et dernier paiement.
 
 ## ⛓️ Blockchain
-- `schedule_anchor(proof_id)` (tâche de fond) signe la preuve et tente une transaction Web3.
-- Si Web3 indisponible, un hash simulé est stocké (`simulated://...`).
-- Les colonnes `blockchain_tx`, `anchor_signature`, `anchored_at` sont alimentées et visibles via l'API.
+- `schedule_anchor(proof_id)` (tâche de fond) regroupe le batch (`anchor_batches`), calcule la racine de Merkle et signe via Web3 (ou simulation).
+- Si Web3 indisponible, un hash simulé est stocké (`simulated://...`) mais la racine est conservée.
+- Les colonnes `blockchain_tx`, `anchor_signature`, `anchored_at`, `anchor_batch_id` sont alimentées et consultables via `/ledger/{id}` ou `/dashboard`.
 
 ## 🖥️ UI & UX
 - Accueil (`/`) : inscription, connexion, génération de preuves et vérification rapide (JS vanilla + fetch).
@@ -116,7 +121,7 @@ ProofOrigin/
 │   ├── api/                       # FastAPI, routers, schémas
 │   │   ├── main.py
 │   │   ├── schemas.py
-│   │   └── routers/{auth,billing,proofs}.py
+│   │   └── routers/{auth,billing,proofs,ledger,admin}.py
 │   ├── core/                      # Config, ORM, sécurité, logging
 │   │   ├── settings.py
 │   │   ├── database.py

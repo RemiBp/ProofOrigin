@@ -10,11 +10,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from prooforigin.api import schemas
+from prooforigin.api.dependencies.auth import get_current_user
 from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
 from prooforigin.core.security import (
     create_access_token,
     create_refresh_token,
+    derive_public_key,
     encrypt_private_key,
     generate_ed25519_keypair,
     hash_password,
@@ -59,6 +61,7 @@ def register_user(payload: schemas.RegisterRequest, db: Session = Depends(get_db
         kyc_level=user.kyc_level,
         credits=user.credits,
         is_verified=user.is_verified,
+        is_admin=user.is_admin,
         created_at=user.created_at,
     )
 
@@ -75,6 +78,10 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = create_access_token({"sub": str(user.id), "scope": "user"})
     refresh_token = create_refresh_token({"sub": str(user.id), "scope": "user"})
     expires_in = settings.access_token_expire_minutes * 60
+
+    user.last_login_at = datetime.utcnow()
+    db.add(user)
+    db.commit()
 
     return schemas.TokenResponse(
         access_token=access_token,
@@ -125,10 +132,103 @@ def upload_key(
     except Exception as exc:  # pragma: no cover - defensive
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid key encoding") from exc
 
+    try:
+        derived_public = derive_public_key(raw_private)
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid private key") from exc
+
     encrypted_private_key, nonce, salt = encrypt_private_key(raw_private, password_form.password)
+    db.add(
+        models.KeyRevocation(
+            user_id=user.id,
+            old_public_key=user.public_key,
+        )
+    )
     user.encrypted_private_key = encrypted_private_key
     user.private_key_nonce = nonce
     user.private_key_salt = salt
+    user.public_key = derived_public
+    user.is_verified = False
+    user.verification_token = secrets.token_urlsafe(32)
+    user.verification_sent_at = datetime.utcnow()
     db.add(user)
     db.commit()
+
+
+@router.post("/rotate-key", response_model=schemas.UserProfile)
+def rotate_key(
+    payload: schemas.RotateKeyRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> schemas.UserProfile:
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+
+    old_public_key = current_user.public_key
+    private_key, public_key = generate_ed25519_keypair()
+    encrypted_private_key, nonce, salt = encrypt_private_key(private_key, payload.password)
+
+    db.add(
+        models.KeyRevocation(
+            user_id=current_user.id,
+            old_public_key=old_public_key,
+        )
+    )
+
+    current_user.public_key = public_key
+    current_user.encrypted_private_key = encrypted_private_key
+    current_user.private_key_nonce = nonce
+    current_user.private_key_salt = salt
+    current_user.is_verified = False
+    current_user.verification_token = secrets.token_urlsafe(32)
+    current_user.verification_sent_at = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    return schemas.UserProfile(
+        id=current_user.id,
+        email=current_user.email,
+        display_name=current_user.display_name,
+        siret=current_user.siret,
+        kyc_level=current_user.kyc_level,
+        credits=current_user.credits,
+        is_verified=current_user.is_verified,
+        is_admin=current_user.is_admin,
+        created_at=current_user.created_at,
+    )
+
+
+@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+def verify_email(payload: schemas.VerificationRequest, db: Session = Depends(get_db)) -> None:
+    user = (
+        db.query(models.User)
+        .filter(models.User.verification_token == payload.token)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid token")
+
+    user.is_verified = True
+    user.kyc_level = "email_verified"
+    user.verification_token = None
+    db.add(user)
+    db.commit()
+
+
+@router.post("/request-verification", status_code=status.HTTP_202_ACCEPTED)
+def request_verification(
+    payload: schemas.ResendVerificationRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    user = db.query(models.User).filter(models.User.email == payload.email.lower()).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.verification_token = secrets.token_urlsafe(32)
+    user.verification_sent_at = datetime.utcnow()
+    db.add(user)
+    db.commit()
+
+    return {"status": "verification_sent"}
 

@@ -81,6 +81,14 @@ def generate_ed25519_keypair() -> tuple[bytes, bytes]:
     )
 
 
+def derive_public_key(private_key_bytes: bytes) -> bytes:
+    private_key = ed25519.Ed25519PrivateKey.from_private_bytes(private_key_bytes)
+    return private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+
+
 def public_key_pem(public_key_bytes: bytes) -> str:
     public_key = ed25519.Ed25519PublicKey.from_public_bytes(public_key_bytes)
     return (
@@ -146,6 +154,7 @@ __all__ = [
     "encrypt_private_key",
     "decrypt_private_key",
     "generate_ed25519_keypair",
+    "derive_public_key",
     "sign_hash",
     "verify_signature",
     "create_access_token",

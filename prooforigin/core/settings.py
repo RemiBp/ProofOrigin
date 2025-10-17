@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # Similarity / ML
     enable_faiss: bool = False
     sentence_transformer_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    clip_model_name: str = "sentence-transformers/clip-ViT-B-32"
 
     # Stripe / billing
     stripe_api_key: str | None = None
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
     blockchain_rpc_url: str | None = None
     blockchain_private_key: str | None = None
     blockchain_enabled: bool = False
+    anchor_batch_size: int = 10
 
     # Rate limiting / monitoring
     rate_limit_requests: int = 100

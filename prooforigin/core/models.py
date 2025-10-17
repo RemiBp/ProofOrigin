@@ -41,8 +41,10 @@ class User(Base):
     kyc_level: Mapped[str] = mapped_column(String(32), default="unverified")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     verification_token: Mapped[str | None]
     verification_sent_at: Mapped[datetime | None]
+    last_login_at: Mapped[datetime | None]
     credits: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -81,6 +83,13 @@ class Proof(Base):
         back_populates="proof", cascade="all,delete", foreign_keys="SimilarityMatch.proof_id"
     )
     alerts: Mapped[list["Alert"]] = relationship(back_populates="proof", cascade="all,delete")
+    anchor_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("anchor_batches.id"), nullable=True, index=True
+    )
+    anchor_batch: Mapped["AnchorBatch" | None] = relationship(back_populates="proofs")
+    relations: Mapped[list["ProofRelation"]] = relationship(
+        back_populates="source_proof", cascade="all,delete", foreign_keys="ProofRelation.source_proof_id"
+    )
 
 
 class ProofFile(Base):
@@ -115,6 +124,19 @@ class SimilarityMatch(Base):
     matched_proof: Mapped["Proof"] = relationship(
         foreign_keys=[matched_proof_id], viewonly=True
     )
+    relation: Mapped["ProofRelation" | None] = relationship(back_populates="match", uselist=False)
+
+
+class SimilarityIndex(Base):
+    __tablename__ = "similarity_index"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    proof_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proofs.id"), nullable=False, index=True)
+    vector: Mapped[list[float]] = mapped_column(JSONType, nullable=False)
+    vector_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    proof: Mapped["Proof"] = relationship()
 
 
 class ApiKey(Base):
@@ -138,6 +160,7 @@ class Payment(Base):
     stripe_charge: Mapped[str] = mapped_column(String(255), unique=True)
     credits: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    checkout_session: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="payments")
 
@@ -166,7 +189,7 @@ class Alert(Base):
 
     proof: Mapped["Proof"] = relationship(back_populates="alerts", foreign_keys=[proof_id])
     match_proof: Mapped["Proof"] = relationship(foreign_keys=[match_proof_id], viewonly=True)
-
+    
 
 class Report(Base):
     __tablename__ = "reports"
@@ -182,6 +205,24 @@ class Report(Base):
     user: Mapped["User"] = relationship(back_populates="reports")
     proof: Mapped["Proof"] = relationship()
     match: Mapped["SimilarityMatch"] = relationship()
+
+
+class ProofRelation(Base):
+    __tablename__ = "proof_relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source_proof_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proofs.id"), nullable=False)
+    related_proof_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("proofs.id"))
+    similarity_match_id: Mapped[int | None] = mapped_column(ForeignKey("similarity_matches.id"))
+    relation_type: Mapped[str] = mapped_column(String(32), default="suspected_copy")
+    score: Mapped[float | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    source_proof: Mapped["Proof"] = relationship(
+        back_populates="relations", foreign_keys=[source_proof_id]
+    )
+    related_proof: Mapped["Proof"] = relationship(foreign_keys=[related_proof_id], viewonly=True)
+    match: Mapped["SimilarityMatch"] = relationship(back_populates="relation")
 
 
 class BatchJob(Base):
@@ -200,15 +241,43 @@ class BatchJob(Base):
     user: Mapped["User"] = relationship()
 
 
+class AnchorBatch(Base):
+    __tablename__ = "anchor_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, primary_key=True)
+    merkle_root: Mapped[str] = mapped_column(String(128), unique=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    transaction_hash: Mapped[str | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    anchored_at: Mapped[datetime | None]
+
+    proofs: Mapped[list["Proof"]] = relationship(back_populates="anchor_batch")
+
+
+class KeyRevocation(Base):
+    __tablename__ = "key_revocations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    old_public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
 __all__ = [
     "User",
     "Proof",
     "ProofFile",
     "SimilarityMatch",
+    "SimilarityIndex",
     "ApiKey",
     "Payment",
     "UsageLog",
     "Alert",
     "Report",
     "BatchJob",
+    "ProofRelation",
+    "AnchorBatch",
+    "KeyRevocation",
 ]

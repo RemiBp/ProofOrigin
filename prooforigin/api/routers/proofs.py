@@ -6,6 +6,7 @@ import json
 import shutil
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 
 from fastapi import (
@@ -68,6 +69,67 @@ def _schedule_anchor_task(background_tasks: BackgroundTasks, proof_id: uuid.UUID
     background_tasks.add_task(schedule_anchor, proof_id)
 
 
+def _assign_to_anchor_batch(db: Session, proof: models.Proof) -> None:
+    batch = (
+        db.query(models.AnchorBatch)
+        .filter(models.AnchorBatch.status == "pending")
+        .order_by(models.AnchorBatch.created_at.asc())
+        .first()
+    )
+    if batch is None or len(batch.proofs) >= settings.anchor_batch_size:
+        batch = models.AnchorBatch(merkle_root=uuid.uuid4().hex)
+        db.add(batch)
+        db.flush()
+
+    proof.anchor_batch_id = batch.id
+
+
+def _build_evidence_pack(
+    proof: models.Proof,
+    match: models.SimilarityMatch | None,
+    report_payload: dict[str, object],
+) -> str:
+    evidence_dir = settings.data_dir / "evidence"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    pack_path = evidence_dir / f"report-{uuid.uuid4()}.zip"
+    with zipfile.ZipFile(pack_path, "w") as archive:
+        archive.writestr(
+            "proof.json",
+            json.dumps(
+                {
+                    "proof_id": str(proof.id),
+                    "file_hash": proof.file_hash,
+                    "signature": proof.signature,
+                    "metadata": proof.metadata,
+                    "anchored_at": proof.anchored_at.isoformat() if proof.anchored_at else None,
+                    "blockchain_tx": proof.blockchain_tx,
+                    "anchor_signature": proof.anchor_signature,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+        if match:
+            archive.writestr(
+                "similarity.json",
+                json.dumps(
+                    {
+                        "match_id": match.id,
+                        "matched_proof_id": str(match.matched_proof_id) if match.matched_proof_id else None,
+                        "score": match.score,
+                        "metrics": match.details or {},
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+        archive.writestr(
+            "report.json",
+            json.dumps(report_payload, ensure_ascii=False, indent=2),
+        )
+    return str(pack_path)
+
+
 @router.post("/generate_proof", response_model=schemas.ProofResponse)
 async def generate_proof(
     background_tasks: BackgroundTasks,
@@ -110,9 +172,10 @@ async def generate_proof(
     )
 
     phash = dhash = None
-    image_vector = None
+    perceptual_vector = None
+    clip_vector = None
     text_embedding = similarity_engine.compute_text_embedding(text_content)
-    phash, dhash, image_vector = similarity_engine.compute_image_hashes(temp_path)
+    phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
 
     proof = models.Proof(
         user_id=current_user.id,
@@ -124,11 +187,13 @@ async def generate_proof(
         file_size=len(file_bytes),
         phash=phash,
         dhash=dhash,
-        image_embedding=image_vector,
+        image_embedding=clip_vector,
         text_embedding=text_embedding,
     )
     db.add(proof)
     db.flush()
+
+    _assign_to_anchor_batch(db, proof)
 
     storage_dir = settings.data_dir / "storage" / str(proof.id)
     storage_dir.mkdir(parents=True, exist_ok=True)
@@ -170,6 +235,7 @@ async def generate_proof(
     current_user.credits = max(0, current_user.credits - 1)
     db.add(models.UsageLog(user_id=current_user.id, action="generate_proof", metadata={"proof_id": str(proof.id)}))
 
+    similarity_engine.persist_embeddings(db, proof, perceptual_vector)
     matches = similarity_engine.update_similarity_matches(db, proof)
 
     db.commit()
@@ -190,6 +256,7 @@ async def generate_proof(
         file_size=proof.file_size,
         matches=matches,
         proof_artifact=proof_artifact,
+        anchor_batch_id=proof.anchor_batch_id,
     )
 
 
@@ -314,6 +381,7 @@ def list_user_proofs(
                 }
                 for match in proof.matches
             ],
+            anchor_batch_id=proof.anchor_batch_id,
         )
         for proof in proofs
     ]
@@ -351,6 +419,7 @@ def get_proof(
         mime_type=proof.mime_type,
         file_size=proof.file_size,
         matches=matches,
+        anchor_batch_id=proof.anchor_batch_id,
     )
 
 
@@ -365,12 +434,13 @@ async def search_similar(
     candidate_proofs = query.all()
 
     phash = dhash = None
-    image_vector = None
+    perceptual_vector = None
+    clip_vector = None
     text_embedding = None
 
     if file:
         temp_path = _save_upload_to_temp(file)
-        phash, dhash, image_vector = similarity_engine.compute_image_hashes(temp_path)
+        phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
 
     if payload.text:
         text_embedding = similarity_engine.compute_text_embedding(payload.text)
@@ -382,7 +452,7 @@ async def search_similar(
         signature="",
         phash=phash,
         dhash=dhash,
-        image_embedding=image_vector,
+        image_embedding=clip_vector,
         text_embedding=text_embedding,
     )
 
@@ -413,13 +483,36 @@ def create_report(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> schemas.ReportResponse:
+    proof = db.get(models.Proof, payload.proof_id) if payload.proof_id else None
+    match = db.get(models.SimilarityMatch, payload.match_id) if payload.match_id else None
+
+    if proof and proof.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot report foreign proof")
+    if match and match.proof_id != payload.proof_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Match does not belong to proof")
+
+    report_payload: dict[str, object] = {
+        "notes": payload.notes,
+        "external_links": payload.external_links,
+    }
+
+    evidence_pack = None
+    if proof:
+        evidence_pack = _build_evidence_pack(proof, match, report_payload)
+        report_payload["evidence_pack"] = evidence_pack
+
     report = models.Report(
         user_id=current_user.id,
         proof_id=payload.proof_id,
         match_id=payload.match_id,
-        payload={"notes": payload.notes, "external_links": payload.external_links},
+        payload=report_payload,
     )
     db.add(report)
     db.commit()
     db.refresh(report)
-    return schemas.ReportResponse(id=report.id, status=report.status, created_at=report.created_at)
+    return schemas.ReportResponse(
+        id=report.id,
+        status=report.status,
+        created_at=report.created_at,
+        evidence_pack=evidence_pack,
+    )

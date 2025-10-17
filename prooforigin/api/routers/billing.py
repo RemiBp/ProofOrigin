@@ -1,6 +1,8 @@
 """Billing and quota endpoints."""
 from __future__ import annotations
 
+import uuid
+
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -25,6 +27,13 @@ def buy_credits(
         fake_url = f"https://billing.prooforigin.dev/checkout?user={current_user.id}"
         current_user.credits += settings.default_credit_pack
         db.add(current_user)
+        db.add(
+            models.Payment(
+                user_id=current_user.id,
+                stripe_charge=f"simulated-{uuid.uuid4().hex}",
+                credits=settings.default_credit_pack,
+            )
+        )
         db.commit()
         return schemas.StripeCheckoutResponse(checkout_url=fake_url, credits=current_user.credits)
 
@@ -40,6 +49,16 @@ def buy_credits(
         )
     except Exception as exc:  # pragma: no cover - depends on Stripe API
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Stripe error") from exc
+
+    db.add(
+        models.Payment(
+            user_id=current_user.id,
+            stripe_charge=session.id,
+            checkout_session=session.id,
+            credits=0,
+        )
+    )
+    db.commit()
 
     return schemas.StripeCheckoutResponse(checkout_url=session.url, credits=current_user.credits)
 
@@ -62,10 +81,19 @@ def usage(
         .order_by(models.Payment.created_at.desc())
         .first()
     )
+    next_batch = (
+        db.query(models.AnchorBatch)
+        .join(models.Proof, models.Proof.anchor_batch_id == models.AnchorBatch.id)
+        .filter(models.Proof.user_id == current_user.id)
+        .filter(models.AnchorBatch.status == "pending")
+        .order_by(models.AnchorBatch.created_at.asc())
+        .first()
+    )
 
     return schemas.UsageResponse(
         proofs_generated=proofs_generated,
         verifications_performed=verifications,
         remaining_credits=current_user.credits,
         last_payment=last_payment.created_at if last_payment else None,
+        next_anchor_batch=next_batch.created_at if next_batch else None,
     )

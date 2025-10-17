@@ -34,6 +34,7 @@ class UserProfile(BaseModel):
     kyc_level: str
     credits: int
     is_verified: bool
+    is_admin: bool
     created_at: datetime
 
 
@@ -58,6 +59,7 @@ class ProofResponse(BaseModel):
     file_size: int | None = None
     matches: list[dict[str, Any]] = Field(default_factory=list)
     proof_artifact: dict[str, Any] | None = None
+    anchor_batch_id: uuid.UUID | None = None
 
 
 class ProofListResponse(BaseModel):
@@ -92,6 +94,7 @@ class UsageResponse(BaseModel):
     verifications_performed: int
     remaining_credits: int
     last_payment: datetime | None
+    next_anchor_batch: datetime | None = None
 
 
 class ReportRequest(BaseModel):
@@ -105,6 +108,7 @@ class ReportResponse(BaseModel):
     id: int
     status: str
     created_at: datetime
+    evidence_pack: str | None = None
 
 
 class BatchVerifyRequest(BaseModel):
@@ -126,6 +130,53 @@ class UploadKeyRequest(BaseModel):
     private_key: str
 
 
+class RotateKeyRequest(BaseModel):
+    password: str
+
+
+class VerificationRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
+class LedgerEntryResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    file_hash: str
+    signature: str
+    metadata: dict[str, Any] | None
+    created_at: datetime
+    anchored_at: datetime | None
+    blockchain_tx: str | None
+    anchor_signature: str | None
+    anchor_batch_id: uuid.UUID | None = None
+    matches: list[dict[str, Any]]
+    alerts: list[dict[str, Any]]
+
+
+class AdminUserSummary(BaseModel):
+    id: uuid.UUID
+    email: str
+    display_name: str | None
+    credits: int
+    is_verified: bool
+    kyc_level: str
+    created_at: datetime
+
+
+class AdminProofSummary(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    file_name: str | None
+    created_at: datetime
+    anchored_at: datetime | None
+    blockchain_tx: str | None
+    suspicious_matches: int
+
+
 __all__ = [
     "TokenResponse",
     "RefreshRequest",
@@ -144,4 +195,10 @@ __all__ = [
     "BatchVerifyResponse",
     "StripeCheckoutResponse",
     "UploadKeyRequest",
+    "RotateKeyRequest",
+    "VerificationRequest",
+    "ResendVerificationRequest",
+    "LedgerEntryResponse",
+    "AdminUserSummary",
+    "AdminProofSummary",
 ]

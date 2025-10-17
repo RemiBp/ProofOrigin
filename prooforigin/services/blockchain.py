@@ -25,6 +25,20 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+def compute_merkle_root(leaves: list[str]) -> str:
+    if not leaves:
+        return hashlib.sha256(b"").hexdigest()
+    nodes = [hashlib.sha256(leaf.encode()).hexdigest() for leaf in leaves]
+    while len(nodes) > 1:
+        if len(nodes) % 2 == 1:
+            nodes.append(nodes[-1])
+        nodes = [
+            hashlib.sha256((nodes[i] + nodes[i + 1]).encode()).hexdigest()
+            for i in range(0, len(nodes), 2)
+        ]
+    return nodes[0]
+
+
 class BlockchainAnchor:
     """Anchor proofs either on-chain or via deterministic simulation."""
 
@@ -77,8 +91,7 @@ class BlockchainAnchor:
                 logger.warning("anchor_tx_failed", error=str(exc))
         return f"simulated://{payload_hash}"
 
-    def anchor_proof(self, proof: models.Proof) -> dict[str, str | datetime]:
-        payload = f"{proof.id}:{proof.file_hash}:{proof.created_at.isoformat()}"
+    def anchor_payload(self, payload: str) -> dict[str, str | datetime]:
         anchor_signature = self.sign_anchor(payload)
         tx_hash = self.submit_transaction(anchor_signature)
         return {
@@ -86,6 +99,10 @@ class BlockchainAnchor:
             "anchor_signature": anchor_signature,
             "anchored_at": datetime.utcnow(),
         }
+
+    def anchor_proof(self, proof: models.Proof) -> dict[str, str | datetime]:
+        payload = f"{proof.id}:{proof.file_hash}:{proof.created_at.isoformat()}"
+        return self.anchor_payload(payload)
 
 
 def schedule_anchor(proof_id: uuid.UUID) -> None:
@@ -99,12 +116,28 @@ def schedule_anchor(proof_id: uuid.UUID) -> None:
         if not proof:
             logger.warning("anchor_missing_proof", proof_id=str(proof_id))
             return
-        result = anchor.anchor_proof(proof)
-        proof.blockchain_tx = result["transaction_hash"]
-        proof.anchor_signature = result["anchor_signature"]
-        proof.anchored_at = result["anchored_at"]
-        session.add(proof)
-        logger.info("proof_anchored", proof_id=str(proof_id), tx=result["transaction_hash"])
+        batch = proof.anchor_batch
+        proofs_to_anchor = list(batch.proofs) if batch else [proof]
+        merkle_root = compute_merkle_root([p.file_hash for p in proofs_to_anchor])
+        result = anchor.anchor_payload(f"merkle:{merkle_root}")
+        anchored_at = result["anchored_at"]
+        for batch_proof in proofs_to_anchor:
+            batch_proof.blockchain_tx = result["transaction_hash"]
+            batch_proof.anchor_signature = result["anchor_signature"]
+            batch_proof.anchored_at = anchored_at
+            session.add(batch_proof)
+        if batch:
+            batch.merkle_root = merkle_root
+            batch.transaction_hash = result["transaction_hash"]
+            batch.anchored_at = anchored_at
+            batch.status = "anchored"
+            session.add(batch)
+        logger.info(
+            "proof_anchored",
+            proof_id=str(proof_id),
+            tx=result["transaction_hash"],
+            merkle_root=merkle_root,
+        )
 
 
-__all__ = ["BlockchainAnchor", "schedule_anchor"]
+__all__ = ["BlockchainAnchor", "schedule_anchor", "compute_merkle_root"]

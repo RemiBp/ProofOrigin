@@ -19,6 +19,8 @@ try:
 except ImportError:  # pragma: no cover
     SentenceTransformer = None  # type: ignore
 
+CLIPModel = SentenceTransformer  # type: ignore
+
 from sqlalchemy.orm import Session
 
 from prooforigin.core import models
@@ -35,23 +37,33 @@ def _load_sentence_model(model_name: str):  # pragma: no cover - heavy dependenc
     return SentenceTransformer(model_name)
 
 
+@lru_cache()
+def _load_clip_model(model_name: str):  # pragma: no cover - heavy dependency
+    if CLIPModel is None:
+        raise RuntimeError("sentence-transformers not installed")
+    return CLIPModel(model_name)
+
+
 class SimilarityEngine:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
 
-    def compute_image_hashes(self, file_path: Path) -> tuple[str | None, str | None, list[float] | None]:
+    def compute_image_hashes(
+        self, file_path: Path
+    ) -> tuple[str | None, str | None, list[float] | None, list[float] | None]:
         if imagehash is None:
-            return None, None, None
+            return None, None, None, None
         try:
             with Image.open(file_path) as img:
                 img = img.convert("RGB")
                 phash = imagehash.phash(img)
                 dhash = imagehash.dhash(img)
                 vector = np.array(phash.hash, dtype=np.float32).flatten().tolist()
-                return str(phash), str(dhash), vector
+                clip_embedding = self.compute_clip_embedding(img)
+                return str(phash), str(dhash), vector, clip_embedding
         except Exception as exc:
             logger.warning("image_hash_failed", error=str(exc))
-            return None, None, None
+            return None, None, None, None
 
     def compute_text_embedding(self, text: str | None) -> Optional[list[float]]:
         if not text:
@@ -62,6 +74,23 @@ class SimilarityEngine:
             return embedding.astype(float).tolist()
         except Exception as exc:  # pragma: no cover - dependent on model availability
             logger.warning("text_embedding_failed", error=str(exc))
+            return None
+
+    def compute_clip_embedding(self, image: Image.Image | Path | None) -> Optional[list[float]]:
+        if image is None:
+            return None
+        try:
+            clip_model = _load_clip_model(self.settings.clip_model_name)
+            if isinstance(image, Path):
+                with Image.open(image) as img:
+                    img = img.convert("RGB")
+                    encoded = clip_model.encode([img], convert_to_numpy=True)
+            else:
+                encoded = clip_model.encode([image.convert("RGB")], convert_to_numpy=True)
+            embedding = encoded[0]
+            return np.asarray(embedding, dtype=float).tolist()
+        except Exception as exc:  # pragma: no cover - dependent on model availability
+            logger.warning("clip_embedding_failed", error=str(exc))
             return None
 
     def cosine_similarity(self, a: Iterable[float], b: Iterable[float]) -> float:
@@ -105,11 +134,18 @@ class SimilarityEngine:
             if proof.phash and other.phash:
                 phash_score = self.hamming_similarity(proof.phash, other.phash)
                 metrics["phash"] = phash_score
-                score_components.append(phash_score)
+                if phash_score:
+                    score_components.append(phash_score)
+            if proof.image_embedding and other.image_embedding:
+                image_score = self.cosine_similarity(proof.image_embedding, other.image_embedding)
+                metrics["clip"] = image_score
+                if image_score:
+                    score_components.append(image_score)
             if proof.text_embedding and other.text_embedding:
                 text_score = self.cosine_similarity(proof.text_embedding, other.text_embedding)
                 metrics["text"] = text_score
-                score_components.append(text_score)
+                if text_score:
+                    score_components.append(text_score)
             if not score_components:
                 continue
             avg_score = sum(score_components) / len(score_components)
@@ -126,7 +162,42 @@ class SimilarityEngine:
             for score, other, metrics in results[:top_k]
         ]
 
-    def update_similarity_matches(self, db: Session, proof: models.Proof, top_k: int = 5) -> list[dict[str, float | str | dict[str, float]]]:
+    def persist_embeddings(
+        self,
+        db: Session,
+        proof: models.Proof,
+        perceptual_vector: list[float] | None,
+    ) -> None:
+        db.query(models.SimilarityIndex).filter(models.SimilarityIndex.proof_id == proof.id).delete()
+        if proof.image_embedding:
+            db.add(
+                models.SimilarityIndex(
+                    proof_id=proof.id,
+                    vector=proof.image_embedding,
+                    vector_type="clip",
+                )
+            )
+        if proof.text_embedding:
+            db.add(
+                models.SimilarityIndex(
+                    proof_id=proof.id,
+                    vector=proof.text_embedding,
+                    vector_type="text",
+                )
+            )
+        if perceptual_vector:
+            db.add(
+                models.SimilarityIndex(
+                    proof_id=proof.id,
+                    vector=perceptual_vector,
+                    vector_type="phash",
+                )
+            )
+        db.flush()
+
+    def update_similarity_matches(
+        self, db: Session, proof: models.Proof, top_k: int = 5
+    ) -> list[dict[str, float | str | dict[str, float]]]:
         existing = (
             db.query(models.Proof)
             .filter(models.Proof.user_id == proof.user_id)
@@ -135,18 +206,37 @@ class SimilarityEngine:
         )
         matches = self.build_similarity_payload(proof, existing, top_k=top_k)
         db.query(models.SimilarityMatch).filter(models.SimilarityMatch.proof_id == proof.id).delete()
+        db.query(models.ProofRelation).filter(models.ProofRelation.source_proof_id == proof.id).delete()
+        db.query(models.Alert).filter(models.Alert.proof_id == proof.id).delete()
         for match in matches:
             matched_id = match.get("proof_id")
             matched_uuid = uuid.UUID(matched_id) if matched_id else None
-            db.add(
-                models.SimilarityMatch(
-                    proof_id=proof.id,
-                    matched_proof_id=matched_uuid,
-                    score=float(match["score"]),
-                    match_type="hybrid",
-                    details=match["metrics"],
-                )
+            similarity_match = models.SimilarityMatch(
+                proof_id=proof.id,
+                matched_proof_id=matched_uuid,
+                score=float(match["score"]),
+                match_type="hybrid",
+                details=match["metrics"],
             )
+            db.add(similarity_match)
+            db.flush()
+
+            if matched_uuid and float(match["score"]) >= 0.8:
+                relation = models.ProofRelation(
+                    source_proof_id=proof.id,
+                    related_proof_id=matched_uuid,
+                    similarity_match_id=similarity_match.id,
+                    score=float(match["score"]),
+                )
+                db.add(relation)
+                db.add(
+                    models.Alert(
+                        proof_id=proof.id,
+                        match_proof_id=matched_uuid,
+                        score=float(match["score"]),
+                        status="open",
+                    )
+                )
         db.flush()
         return matches
 
