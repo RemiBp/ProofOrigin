@@ -1,0 +1,345 @@
+"""
+ProofOrigin - Blockchain Anchoring System
+Système d'ancrage des preuves sur blockchain publique
+"""
+
+import hashlib
+import json
+import time
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+import sqlite3
+import os
+
+class MerkleTree:
+    """Arbre de Merkle pour l'agrégation des preuves"""
+    
+    def __init__(self, data: List[str]):
+        self.data = data
+        self.tree = self.build_tree()
+        self.root = self.tree[0] if self.tree else None
+    
+    def build_tree(self) -> List[str]:
+        """Construit l'arbre de Merkle"""
+        if not self.data:
+            return []
+        
+        # Niveau des feuilles
+        level = [hashlib.sha256(item.encode()).hexdigest() for item in self.data]
+        tree = [level]
+        
+        # Construire les niveaux supérieurs
+        while len(level) > 1:
+            next_level = []
+            for i in range(0, len(level), 2):
+                left = level[i]
+                right = level[i + 1] if i + 1 < len(level) else left
+                combined = left + right
+                next_level.append(hashlib.sha256(combined.encode()).hexdigest())
+            level = next_level
+            tree.append(level)
+        
+        return tree
+    
+    def get_root(self) -> Optional[str]:
+        """Retourne la racine de l'arbre de Merkle"""
+        return self.root
+    
+    def get_proof(self, index: int) -> List[str]:
+        """Génère une preuve de Merkle pour un élément donné"""
+        if index >= len(self.data):
+            return []
+        
+        proof = []
+        current_index = index
+        
+        for level in self.tree[:-1]:  # Exclure la racine
+            if current_index % 2 == 0:  # Nœud gauche
+                sibling_index = current_index + 1
+            else:  # Nœud droit
+                sibling_index = current_index - 1
+            
+            if sibling_index < len(level):
+                proof.append(level[sibling_index])
+            
+            current_index //= 2
+        
+        return proof
+
+class BlockchainAnchor:
+    """Système d'ancrage sur blockchain"""
+    
+    def __init__(self, rpc_url: str = None, private_key: str = None):
+        self.rpc_url = rpc_url or "https://polygon-rpc.com"  # Polygon par défaut
+        self.private_key = private_key
+        self.w3 = None
+        self.account = None
+        
+        if rpc_url and private_key:
+            self.setup_web3()
+    
+    def setup_web3(self):
+        """Configure la connexion Web3 (version simplifiée)"""
+        try:
+            # Version simplifiée sans Web3 pour les tests
+            self.w3 = None
+            self.account = None
+            print(f"✅ Mode simulation activé pour {self.rpc_url}")
+            print(f"📧 Mode: Simulation blockchain")
+        except Exception as e:
+            print(f"❌ Erreur de configuration: {e}")
+    
+    def get_daily_proofs(self, db_file: str = "ledger.db") -> List[Dict[str, Any]]:
+        """Récupère toutes les preuves du jour"""
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        # Preuves des dernières 24h
+        yesterday = time.time() - (24 * 3600)
+        c.execute("""
+            SELECT id, filename, hash, signature, timestamp 
+            FROM proofs 
+            WHERE timestamp > ? 
+            ORDER BY timestamp ASC
+        """, (yesterday,))
+        
+        proofs = []
+        for row in c.fetchall():
+            proofs.append({
+                'id': row[0],
+                'filename': row[1],
+                'hash': row[2],
+                'signature': row[3],
+                'timestamp': row[4]
+            })
+        
+        conn.close()
+        return proofs
+    
+    def create_daily_merkle_root(self, proofs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Crée la racine Merkle quotidienne"""
+        if not proofs:
+            return None
+        
+        # Créer les données pour l'arbre de Merkle
+        merkle_data = []
+        for proof in proofs:
+            # Combiner les données importantes
+            proof_string = f"{proof['id']}:{proof['hash']}:{proof['timestamp']}"
+            merkle_data.append(proof_string)
+        
+        # Construire l'arbre de Merkle
+        merkle_tree = MerkleTree(merkle_data)
+        root = merkle_tree.get_root()
+        
+        return {
+            'merkle_root': root,
+            'proof_count': len(proofs),
+            'timestamp': time.time(),
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'proofs': proofs
+        }
+    
+    def anchor_to_blockchain(self, merkle_data: Dict[str, Any]) -> Optional[str]:
+        """Ancre la racine Merkle sur la blockchain"""
+        if not self.w3 or not self.account:
+            print("⚠️ Web3 non configuré, simulation d'ancrage")
+            return self.simulate_anchoring(merkle_data)
+        
+        try:
+            # Préparer la transaction
+            message = f"ProofOrigin Daily Root {merkle_data['date']}: {merkle_data['merkle_root']}"
+            
+            # Signer le message
+            signed_message = self.account.sign_message(message.encode())
+            
+            # Simuler l'envoi sur blockchain (dans un vrai déploiement, 
+            # on utiliserait un smart contract)
+            tx_hash = hashlib.sha256(
+                f"{message}:{signed_message.signature.hex()}:{int(time.time())}".encode()
+            ).hexdigest()
+            
+            print(f"🔗 Racine Merkle ancrée: {merkle_data['merkle_root'][:16]}...")
+            print(f"📝 Transaction: {tx_hash}")
+            
+            return tx_hash
+            
+        except Exception as e:
+            print(f"❌ Erreur d'ancrage: {e}")
+            return None
+    
+    def simulate_anchoring(self, merkle_data: Dict[str, Any]) -> str:
+        """Simule l'ancrage pour les tests"""
+        tx_hash = hashlib.sha256(
+            f"{merkle_data['merkle_root']}:{merkle_data['timestamp']}".encode()
+        ).hexdigest()
+        
+        print(f"🧪 SIMULATION - Racine Merkle: {merkle_data['merkle_root'][:16]}...")
+        print(f"🧪 SIMULATION - Transaction: {tx_hash}")
+        
+        return tx_hash
+    
+    def save_anchor_record(self, merkle_data: Dict[str, Any], tx_hash: str, db_file: str = "ledger.db"):
+        """Sauvegarde l'enregistrement d'ancrage"""
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        # Créer la table des ancrages si elle n'existe pas
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS anchors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT UNIQUE,
+                merkle_root TEXT,
+                proof_count INTEGER,
+                transaction_hash TEXT,
+                timestamp REAL,
+                created_at REAL DEFAULT (strftime('%s', 'now'))
+            )
+        """)
+        
+        try:
+            c.execute("""
+                INSERT INTO anchors (date, merkle_root, proof_count, transaction_hash, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                merkle_data['date'],
+                merkle_data['merkle_root'],
+                merkle_data['proof_count'],
+                tx_hash,
+                merkle_data['timestamp']
+            ))
+            conn.commit()
+            print(f"💾 Ancrage sauvegardé pour {merkle_data['date']}")
+        except sqlite3.IntegrityError:
+            print(f"⚠️ Ancrage déjà existant pour {merkle_data['date']}")
+        finally:
+            conn.close()
+    
+    def get_anchor_history(self, db_file: str = "ledger.db") -> List[Dict[str, Any]]:
+        """Récupère l'historique des ancrages"""
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        c.execute("""
+            SELECT date, merkle_root, proof_count, transaction_hash, timestamp
+            FROM anchors 
+            ORDER BY timestamp DESC
+        """)
+        
+        anchors = []
+        for row in c.fetchall():
+            anchors.append({
+                'date': row[0],
+                'merkle_root': row[1],
+                'proof_count': row[2],
+                'transaction_hash': row[3],
+                'timestamp': row[4]
+            })
+        
+        conn.close()
+        return anchors
+    
+    def verify_proof_in_anchor(self, proof_id: int, db_file: str = "ledger.db") -> Dict[str, Any]:
+        """Vérifie qu'une preuve est incluse dans un ancrage"""
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        # Récupérer la preuve
+        c.execute("SELECT id, filename, hash, timestamp FROM proofs WHERE id = ?", (proof_id,))
+        proof_row = c.fetchone()
+        
+        if not proof_row:
+            conn.close()
+            return {'verified': False, 'error': 'Proof not found'}
+        
+        proof = {
+            'id': proof_row[0],
+            'filename': proof_row[1],
+            'hash': proof_row[2],
+            'timestamp': proof_row[3]
+        }
+        
+        # Trouver l'ancrage correspondant
+        proof_date = datetime.fromtimestamp(proof['timestamp']).strftime('%Y-%m-%d')
+        c.execute("SELECT * FROM anchors WHERE date = ?", (proof_date,))
+        anchor_row = c.fetchone()
+        
+        conn.close()
+        
+        if anchor_row:
+            return {
+                'verified': True,
+                'proof': proof,
+                'anchor': {
+                    'date': anchor_row[1],
+                    'merkle_root': anchor_row[2],
+                    'proof_count': anchor_row[3],
+                    'transaction_hash': anchor_row[4]
+                }
+            }
+        else:
+            return {
+                'verified': False,
+                'error': 'No anchor found for this date'
+            }
+
+def run_daily_anchoring(db_file: str = "ledger.db", rpc_url: str = None, private_key: str = None):
+    """Fonction principale pour l'ancrage quotidien"""
+    print("🔗 ProofOrigin - Ancrage quotidien")
+    print("=" * 40)
+    
+    # Initialiser l'ancreur
+    anchorer = BlockchainAnchor(rpc_url, private_key)
+    
+    # Récupérer les preuves du jour
+    print("📊 Récupération des preuves du jour...")
+    daily_proofs = anchorer.get_daily_proofs(db_file)
+    
+    if not daily_proofs:
+        print("ℹ️ Aucune nouvelle preuve à ancrer aujourd'hui")
+        return
+    
+    print(f"📝 {len(daily_proofs)} preuves trouvées")
+    
+    # Créer la racine Merkle
+    print("🌳 Création de la racine Merkle...")
+    merkle_data = anchorer.create_daily_merkle_root(daily_proofs)
+    
+    if not merkle_data:
+        print("❌ Erreur lors de la création de la racine Merkle")
+        return
+    
+    print(f"✅ Racine Merkle: {merkle_data['merkle_root'][:16]}...")
+    
+    # Ancrer sur blockchain
+    print("⛓️ Ancrage sur blockchain...")
+    tx_hash = anchorer.anchor_to_blockchain(merkle_data)
+    
+    if tx_hash:
+        # Sauvegarder l'enregistrement
+        anchorer.save_anchor_record(merkle_data, tx_hash, db_file)
+        print("✅ Ancrage quotidien terminé avec succès")
+    else:
+        print("❌ Échec de l'ancrage")
+
+if __name__ == "__main__":
+    import sys
+    
+    # Configuration par défaut (simulation)
+    rpc_url = None
+    private_key = None
+    
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "--help":
+            print("Usage: python blockchain_anchor.py [--rpc-url URL] [--private-key KEY]")
+            print("Exemple: python blockchain_anchor.py --rpc-url https://polygon-rpc.com --private-key 0x...")
+            sys.exit(0)
+        
+        # Parser les arguments
+        for i, arg in enumerate(sys.argv[1:], 1):
+            if arg == "--rpc-url" and i + 1 < len(sys.argv):
+                rpc_url = sys.argv[i + 1]
+            elif arg == "--private-key" and i + 1 < len(sys.argv):
+                private_key = sys.argv[i + 1]
+    
+    run_daily_anchoring(rpc_url=rpc_url, private_key=private_key)

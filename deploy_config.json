@@ -1,0 +1,33 @@
+{
+  "environment": "production",
+  "host": "0.0.0.0",
+  "port": 5000,
+  "debug": false,
+  "database_url": "sqlite:///ledger.db",
+  "blockchain": {
+    "rpc_url": "https://polygon-rpc.com",
+    "private_key": null,
+    "enabled": false
+  },
+  "fuzzy_matching": {
+    "enabled": true,
+    "image_threshold": 0.8,
+    "text_threshold": 0.7
+  },
+  "security": {
+    "https": true,
+    "cors": true,
+    "rate_limit": 1000
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/prooforigin.log",
+    "max_size": "10MB",
+    "backup_count": 5
+  },
+  "api": {
+    "max_file_size": "100MB",
+    "allowed_extensions": [".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt", ".md", ".json", ".xml", ".html"],
+    "rate_limit_per_minute": 100
+  }
+}

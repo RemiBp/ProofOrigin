@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Registre des preuves - ProofOrigin{% endblock %}
+
+{% block content %}
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem;">
+    <div>
+        <h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;">
+            <i class="fas fa-database" style="color: var(--primary-color); margin-right: 0.5rem;"></i>
+            Registre des preuves
+        </h1>
+        <p style="color: var(--text-secondary);">
+            Toutes les preuves d'authenticité enregistrées dans le système
+        </p>
+    </div>
+    <a href="/" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i>
+        Retour à l'accueil
+    </a>
+</div>
+
+{% if proofs %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-list-alt" style="color: var(--primary-color); margin-right: 0.5rem;"></i>
+            Preuves enregistrées ({{ proofs|length }})
+        </h2>
+        <p class="card-subtitle">Cliquez sur une preuve pour la télécharger</p>
+    </div>
+    <div class="card-body" style="padding: 0;">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Fichier</th>
+                        <th>Empreinte (Hash)</th>
+                        <th>Date d'enregistrement</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in proofs %}
+                    <tr>
+                        <td>
+                            <span class="badge badge-success">#{{ p[0] }}</span>
+                        </td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fas fa-file-alt" style="color: var(--text-secondary);"></i>
+                                <strong>{{ p[1] }}</strong>
+                            </div>
+                        </td>
+                        <td>
+                            <code style="background: var(--background-color); padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-primary);">
+                                {{ p[2][:16] }}...{{ p[2][-8:] }}
+                            </code>
+                        </td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <i class="fas fa-clock" style="color: var(--text-secondary); font-size: 0.875rem;"></i>
+                                <span style="font-size: 0.875rem;">
+                                    {{ (p[3] | float | int) | timestamp_to_date }}
+                                </span>
+                            </div>
+                        </td>
+                        <td>
+                            <a href="/export/{{ p[0] }}" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.75rem;">
+                                <i class="fas fa-download"></i>
+                                Exporter
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Stats -->
+<div class="grid grid-3" style="margin-top: 2rem;">
+    <div class="card">
+        <div class="card-body" style="text-align: center;">
+            <div style="font-size: 2rem; color: var(--primary-color); margin-bottom: 0.5rem;">
+                <i class="fas fa-file-alt"></i>
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem;">
+                {{ proofs|length }}
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.875rem;">
+                Fichiers enregistrés
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body" style="text-align: center;">
+            <div style="font-size: 2rem; color: var(--success-color); margin-bottom: 0.5rem;">
+                <i class="fas fa-shield-alt"></i>
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem;">
+                100%
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.875rem;">
+                Preuves cryptographiques
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-body" style="text-align: center;">
+            <div style="font-size: 2rem; color: var(--warning-color); margin-bottom: 0.5rem;">
+                <i class="fas fa-lock"></i>
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem;">
+                RSA-2048
+            </div>
+            <div style="color: var(--text-secondary); font-size: 0.875rem;">
+                Algorithme de signature
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="card">
+    <div class="card-body" style="text-align: center; padding: 3rem;">
+        <div style="font-size: 4rem; color: var(--text-secondary); margin-bottom: 1rem;">
+            <i class="fas fa-database"></i>
+        </div>
+        <h3 style="margin-bottom: 1rem; font-weight: 600;">Aucune preuve enregistrée</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+            Le registre est vide. Commencez par enregistrer votre premier fichier pour créer une preuve d'authenticité.
+        </p>
+        <a href="/" class="btn btn-primary">
+            <i class="fas fa-plus"></i>
+            Enregistrer un fichier
+        </a>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add hover effects to table rows
+    document.addEventListener('DOMContentLoaded', function() {
+        const tableRows = document.querySelectorAll('.table tbody tr');
+        tableRows.forEach(row => {
+            row.addEventListener('click', function() {
+                const exportLink = this.querySelector('a[href*="/export/"]');
+                if (exportLink) {
+                    exportLink.click();
+                }
+            });
+            row.style.cursor = 'pointer';
+        });
+    });
+</script>
+{% endblock %}

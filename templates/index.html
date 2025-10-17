@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}ProofOrigin - Trust Layer for AI Content{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero">
+    <h1 class="hero-title">ProofOrigin</h1>
+    <p class="hero-subtitle">
+        L'infrastructure ouverte pour prouver, vérifier et tracer l'origine des contenus numériques et IA.
+        <br>Créez des preuves d'authenticité infalsifiables et vérifiables.
+    </p>
+</section>
+
+<!-- Main Actions Grid -->
+<div class="grid grid-2">
+    <!-- Register File Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <i class="fas fa-shield-alt" style="color: var(--primary-color); margin-right: 0.5rem;"></i>
+                Enregistrer un fichier
+            </h2>
+            <p class="card-subtitle">Créez une preuve d'authenticité cryptographique pour votre fichier</p>
+        </div>
+        <div class="card-body">
+            <form action="/register" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label class="form-label">Sélectionnez un fichier</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" name="file" class="file-input" required>
+                        <div class="file-input-display">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>Cliquez pour sélectionner un fichier</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-lock"></i>
+                    Créer une preuve
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Verify File Card -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">
+                <i class="fas fa-search" style="color: var(--success-color); margin-right: 0.5rem;"></i>
+                Vérifier un fichier
+            </h2>
+            <p class="card-subtitle">Vérifiez l'authenticité d'un fichier dans notre registre</p>
+        </div>
+        <div class="card-body">
+            <form action="/verify" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label class="form-label">Sélectionnez un fichier à vérifier</label>
+                    <div class="file-input-wrapper">
+                        <input type="file" name="file" class="file-input" required>
+                        <div class="file-input-display">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>Cliquez pour sélectionner un fichier</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success">
+                    <i class="fas fa-check-circle"></i>
+                    Vérifier l'authenticité
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<section style="margin-top: 4rem;">
+    <h2 style="text-align: center; margin-bottom: 2rem; font-size: 2rem; font-weight: 600;">
+        Pourquoi ProofOrigin ?
+    </h2>
+    
+    <div class="grid grid-3">
+        <div class="card">
+            <div class="card-body" style="text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: var(--primary-color);">
+                    <i class="fas fa-shield-alt"></i>
+                </div>
+                <h3 style="margin-bottom: 1rem; font-weight: 600;">Cryptographie robuste</h3>
+                <p style="color: var(--text-secondary);">
+                    Utilisation de SHA-256 et signatures RSA pour garantir l'intégrité et l'authenticité.
+                </p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-body" style="text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: var(--success-color);">
+                    <i class="fas fa-database"></i>
+                </div>
+                <h3 style="margin-bottom: 1rem; font-weight: 600;">Registre infalsifiable</h3>
+                <p style="color: var(--text-secondary);">
+                    Base de données append-only qui enregistre de manière permanente toutes les preuves.
+                </p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-body" style="text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 1rem; color: var(--warning-color);">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <h3 style="margin-bottom: 1rem; font-weight: 600;">Standard ouvert</h3>
+                <p style="color: var(--text-secondary);">
+                    Protocole ouvert et interopérable pour l'authentification de contenu IA et humain.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Quick Stats -->
+<section style="margin-top: 4rem; text-align: center;">
+    <div class="card">
+        <div class="card-body">
+            <h3 style="margin-bottom: 1.5rem; font-weight: 600;">Registre des preuves</h3>
+            <div style="display: flex; justify-content: center; gap: 3rem; flex-wrap: wrap;">
+                <div>
+                    <div style="font-size: 2rem; font-weight: 700; color: var(--primary-color);">
+                        <i class="fas fa-file-alt"></i>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
+                        Fichiers enregistrés
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 2rem; font-weight: 700; color: var(--success-color);">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
+                        Preuves cryptographiques
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 2rem; font-weight: 700; color: var(--warning-color);">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem;">
+                        Horodatage précis
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top: 1.5rem;">
+                <a href="/list" class="btn btn-secondary">
+                    <i class="fas fa-list"></i>
+                    Voir le registre complet
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
