@@ -381,6 +381,28 @@
                 badge.textContent = 'Connectez-vous pour générer vos clés API';
             }
         }
+document.getElementById('login-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const payload = new URLSearchParams();
+    payload.append('username', form.email.value);
+    payload.append('password', form.password.value);
+    const response = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: payload
+    });
+    const feedback = document.getElementById('login-feedback');
+    if (response.ok) {
+        const data = await response.json();
+        setTokens(data.access_token, data.refresh_token);
+        feedback.textContent = '✅ Authentification réussie. Vous pouvez maintenant générer des preuves.';
+        loadUsage();
+    } else {
+        const error = await response.json();
+        feedback.textContent = `❌ ${error.detail || 'Identifiants invalides'}`;
+    }
+});
 
         async function loadUsage(button) {
             if (!state.accessToken) {

@@ -59,6 +59,7 @@ def create_api_key(
         key=key_value,
         quota=plan_limits.monthly_quota,
     )
+    api_key = models.ApiKey(user_id=current_user.id, key=key_value, quota=current_user.credits)
     db.add(api_key)
     db.commit()
     db.refresh(api_key)

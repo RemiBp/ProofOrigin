@@ -120,6 +120,14 @@ def api_verify_hash(
             metadata_json={"hash": file_hash, "proof_id": str(proof.id) if proof else None},
         )
     )
+    if proof:
+        db.add(
+            models.UsageLog(
+                user_id=proof.user_id,
+                action="verify_hash",
+                metadata_json={"proof_id": str(proof.id)},
+            )
+        )
     db.commit()
     return schemas.HashVerificationResponse(
         exists=proof is not None,
