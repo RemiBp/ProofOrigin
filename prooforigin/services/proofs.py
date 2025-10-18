@@ -243,6 +243,8 @@ class ProofRegistrationService:
         if not proof.blockchain_tx:
             self._assign_to_anchor_batch(db, proof)
             self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
+        self._assign_to_anchor_batch(db, proof)
+        self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
         self._persist_original_file(proof, db, content.data, content.filename, content.mime_type)
         artifact = self._persist_artifact(proof, user, metadata_payload, signature, db)
         self._record_usage(user, proof, db)

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { API_BASE_URL, APP_ORIGIN } from "../lib/config";
 import { useTranslations } from "./i18n/language-provider";
+import { API_BASE_URL, APP_ORIGIN } from "../lib/config";
 
 interface ProofResult {
   id: string;
@@ -53,11 +54,21 @@ export function UploadForm() {
     }
     if (!file && !textPayload.trim()) {
       setStatus(t.upload.statusMissingPayload);
+      setStatus("Merci de renseigner votre clé API X-API-Key.");
+      return;
+    }
+    if (!keyPassword) {
+      setStatus("Votre mot de passe de clé privée est requis.");
+      return;
+    }
+    if (!file && !textPayload.trim()) {
+      setStatus("Ajoutez un fichier ou un texte à certifier.");
       return;
     }
 
     setLoading(true);
     setStatus(t.upload.statusLoading);
+    setStatus("Génération de la preuve en cours…");
     setProof(null);
 
     try {
@@ -100,6 +111,10 @@ export function UploadForm() {
     } catch (error) {
       console.error(error);
       setStatus(t.upload.statusError.replace("{{message}}", (error as Error).message));
+      setStatus("Preuve générée avec succès. Vous pouvez télécharger le certificat.");
+    } catch (error) {
+      console.error(error);
+      setStatus(`Impossible de générer la preuve : ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -111,6 +126,8 @@ export function UploadForm() {
         <div>
           <h2 style={{ margin: 0, fontSize: "1.8rem" }}>{t.upload.heading}</h2>
           <p style={{ marginTop: "0.25rem", color: "var(--primary)" }}>{t.upload.subheading}</p>
+          <h2 style={{ margin: 0, fontSize: "1.8rem" }}>Uploader et certifier en direct</h2>
+          <p style={{ marginTop: "0.25rem", color: "var(--primary)" }}>Hash SHA-256, signature Ed25519 et certificat PDF instantané.</p>
         </div>
       </div>
       <form className="grid" onSubmit={handleSubmit}>
@@ -135,6 +152,20 @@ export function UploadForm() {
         </label>
         <label>
           <span>{t.upload.fileLabel}</span>
+            <span>Clé API (X-API-Key)</span>
+            <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="pk_live_..." required />
+          </label>
+          <label>
+            <span>Mot de passe de clé</span>
+            <input type="password" value={keyPassword} onChange={(event) => setKeyPassword(event.target.value)} placeholder="••••••" required />
+          </label>
+        </div>
+        <label>
+          <span>Texte à certifier</span>
+          <textarea rows={4} value={textPayload} onChange={(event) => setTextPayload(event.target.value)} placeholder="Collez ici une description, un prompt IA, un script…" />
+        </label>
+        <label>
+          <span>Fichier (optionnel)</span>
           <input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
         </label>
         <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
@@ -142,6 +173,9 @@ export function UploadForm() {
             {loading ? t.upload.submitting : t.upload.submit}
           </button>
           <span className="badge">{t.upload.compatibilityBadge}</span>
+            {loading ? "Génération…" : "Certifier maintenant"}
+          </button>
+          <span className="badge">Compatible Polygon · Base · OpenTimestamps</span>
         </div>
       </form>
       {status && <p>{status}</p>}
@@ -170,6 +204,22 @@ export function UploadForm() {
             </a>
             <a className="btn btn-secondary" href={`${API_BASE_URL}/verify/${proof.file_hash}/certificate`} target="_blank" rel="noreferrer">
               {t.upload.downloadButton}
+          <h3 style={{ margin: 0 }}>Preuve #{proof.id.slice(0, 8)}</h3>
+          <p style={{ margin: 0 }}>Hash : {proof.file_hash}</p>
+          <p style={{ margin: 0 }}>Créée le : {new Date(proof.created_at).toLocaleString()}</p>
+          {proof.blockchain_tx ? (
+            <a href={`https://polygonscan.com/tx/${proof.blockchain_tx}`} target="_blank" rel="noreferrer">
+              Voir l’ancrage blockchain
+            </a>
+          ) : (
+            <span>En attente d’ancrage blockchain…</span>
+          )}
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            <a className="btn btn-secondary" href={`${appUrl}/verify/${proof.file_hash}`} target="_blank" rel="noreferrer">
+              Vérifier publiquement
+            </a>
+            <a className="btn btn-secondary" href={`${API_BASE_URL}/verify/${proof.file_hash}/certificate`} target="_blank" rel="noreferrer">
+              Télécharger le certificat PDF
             </a>
           </div>
         </div>

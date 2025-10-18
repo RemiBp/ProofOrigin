@@ -7,6 +7,10 @@ import { useTranslations } from "./i18n/language-provider";
 
 export function NavBar() {
   const t = useTranslations();
+import Link from "next/link";
+import { ThemeToggle } from "./theme-toggle";
+
+export function NavBar() {
   return (
     <header style={{ padding: "1.4rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <Link href="/" style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontWeight: 700, fontSize: "1.1rem" }}>
@@ -23,6 +27,11 @@ export function NavBar() {
           {t.nav.dashboard}
         </Link>
         <LanguageToggle />
+          Tarifs
+        </Link>
+        <Link href="/dashboard" className="btn btn-secondary" style={{ paddingInline: "1.2rem" }}>
+          Dashboard
+        </Link>
         <ThemeToggle />
       </nav>
     </header>

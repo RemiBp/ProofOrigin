@@ -40,6 +40,7 @@
             const link = document.createElement('a');
             const explorerBase = 'https://polygonscan.com/tx/';
             link.href = data.blockchain_tx.startsWith('http') ? data.blockchain_tx : `${explorerBase}${data.blockchain_tx}`;
+            link.href = `https://polygonscan.com/tx/${data.blockchain_tx}`;
             link.target = '_blank';
             link.rel = 'noreferrer';
             link.textContent = 'Voir la transaction blockchain';

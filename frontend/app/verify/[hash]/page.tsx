@@ -6,6 +6,11 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "../../../components/i18n/language-provider";
 import { API_BASE_URL } from "../../../lib/config";
 
+import Link from "next/link";
+import { API_BASE_URL } from "../../../lib/config";
+
+export const dynamic = "force-dynamic";
+
 interface PublicProofStatus {
   hash: string;
   status: "verified" | "missing";
@@ -15,6 +20,16 @@ interface PublicProofStatus {
   download_url?: string | null;
   proof_id?: string | null;
   anchored?: boolean;
+}
+
+async function getStatus(hash: string): Promise<PublicProofStatus | null> {
+  const response = await fetch(`${API_BASE_URL}/verify/${encodeURIComponent(hash)}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    return null;
+  }
+  return (await response.json()) as PublicProofStatus;
 }
 
 interface Props {
@@ -70,6 +85,17 @@ export default function VerifyPage({ params }: Props) {
       <section className="glass-card">
         <h1>{t.publicVerify.heading}</h1>
         <p>{t.publicVerify.loading}</p>
+export default async function VerifyPage({ params }: Props) {
+  const status = await getStatus(params.hash);
+
+  if (!status) {
+    return (
+      <section className="glass-card">
+        <h1>Preuve introuvable</h1>
+        <p>Impossible de charger le statut pour le hash {params.hash}.</p>
+        <Link className="btn btn-secondary" href="/">
+          Revenir à l’accueil
+        </Link>
       </section>
     );
   }
@@ -118,3 +144,32 @@ export default function VerifyPage({ params }: Props) {
   );
 }
 
+  return (
+    <>
+      <section className="glass-card">
+        <h1 style={{ margin: 0 }}>Statut de la preuve</h1>
+        <p style={{ margin: 0 }}>Hash : {status.hash}</p>
+        <p style={{ margin: 0 }}>Statut : {status.status === "verified" ? "✅ Vérifiée" : "❌ Non enregistrée"}</p>
+        {status.created_at && <p>Date de création : {new Date(status.created_at).toLocaleString()}</p>}
+        {status.owner && (
+          <p>
+            Propriétaire : {status.owner.display_name ?? status.owner.email ?? status.owner.id}
+          </p>
+        )}
+        {status.anchored && status.blockchain_tx && (
+          <a href={`https://polygonscan.com/tx/${status.blockchain_tx}`} target="_blank" rel="noreferrer">
+            Voir l’ancrage blockchain
+          </a>
+        )}
+        {status.download_url && (
+          <a className="btn btn-primary" href={`${API_BASE_URL}${status.download_url}`} target="_blank" rel="noreferrer">
+            Télécharger le certificat PDF
+          </a>
+        )}
+        <Link className="btn btn-secondary" href="/">
+          Générer une nouvelle preuve
+        </Link>
+      </section>
+    </>
+  );
+}

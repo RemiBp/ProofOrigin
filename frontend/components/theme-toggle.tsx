@@ -34,6 +34,8 @@ export function ThemeToggle() {
   return (
     <button className="btn btn-secondary" onClick={toggle} aria-label="Toggle theme">
       {theme === "dark" ? t.theme.dark : t.theme.light}
+    <button className="btn btn-secondary" onClick={toggle} aria-label="Basculer le thème">
+      {theme === "dark" ? "🌙 Mode nuit" : "☀️ Mode jour"}
     </button>
   );
 }
