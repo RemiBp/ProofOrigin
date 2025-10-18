@@ -24,7 +24,7 @@ from prooforigin.core.security import (
 )
 from prooforigin.core.settings import get_settings
 
-router = APIRouter(prefix="/api/v1", tags=["auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 settings = get_settings()
 
 

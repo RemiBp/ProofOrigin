@@ -84,6 +84,16 @@ class VerifyResult(BaseModel):
     timestamp: datetime
 
 
+class HashVerificationResponse(BaseModel):
+    exists: bool
+    proof_id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    owner_id: uuid.UUID | None = None
+    owner_email: str | None = None
+    anchored: bool = False
+    blockchain_tx: str | None = None
+
+
 class SimilarityRequest(BaseModel):
     text: str | None = None
     top_k: int = 5
@@ -119,6 +129,56 @@ class BatchVerifyRequest(BaseModel):
 class BatchVerifyResponse(BaseModel):
     job_id: uuid.UUID
     status: str
+
+
+class ApiKeyResponse(BaseModel):
+    id: int
+    key: str
+    quota: int
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class ProofSubmission(BaseModel):
+    content: str | None = None
+    text: str | None = None
+    filename: str | None = None
+    mime_type: str | None = None
+    metadata: dict[str, Any] | None = None
+    key_password: str
+
+
+class BatchProofItem(BaseModel):
+    content: str | None = None
+    text: str | None = None
+    filename: str | None = None
+    mime_type: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class BatchProofRequest(BaseModel):
+    items: list[BatchProofItem]
+    key_password: str
+
+
+class BatchProofResult(BaseModel):
+    success: bool
+    proof: ProofResponse | None = None
+    error: str | None = None
+
+
+class BatchProofResponsePayload(BaseModel):
+    results: list[BatchProofResult]
+
+
+class AIProofRequest(BaseModel):
+    model_name: str
+    prompt: str | None = None
+    content: str | None = None
+    text: str | None = None
+    metadata: dict[str, Any] | None = None
+    key_password: str
+    webhook_event: str | None = None
 
 
 class StripeCheckoutResponse(BaseModel):
@@ -201,6 +261,7 @@ __all__ = [
     "ProofListResponse",
     "VerifyRequest",
     "VerifyResult",
+    "HashVerificationResponse",
     "SimilarityRequest",
     "UsageResponse",
     "ReportRequest",
@@ -217,4 +278,11 @@ __all__ = [
     "AdminProofSummary",
     "WebhookSubscriptionCreate",
     "WebhookSubscriptionResponse",
+    "ApiKeyResponse",
+    "ProofSubmission",
+    "BatchProofItem",
+    "BatchProofRequest",
+    "BatchProofResult",
+    "BatchProofResponsePayload",
+    "AIProofRequest",
 ]

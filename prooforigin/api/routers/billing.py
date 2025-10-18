@@ -1,10 +1,11 @@
 """Billing and quota endpoints."""
 from __future__ import annotations
 
+import json
 import uuid
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from prooforigin.api import schemas
@@ -61,6 +62,51 @@ def buy_credits(
     db.commit()
 
     return schemas.StripeCheckoutResponse(checkout_url=session.url, credits=current_user.credits)
+
+
+@router.post("/stripe/webhook", status_code=status.HTTP_202_ACCEPTED)
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> None:
+    payload = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+    stripe.api_key = settings.stripe_api_key
+    if settings.stripe_webhook_secret and sig_header:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.stripe_webhook_secret
+            )
+        except Exception as exc:  # pragma: no cover - signature validation
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature") from exc
+    else:
+        data = json.loads(payload.decode() or "{}")
+        event = stripe.Event.construct_from(data, stripe.api_key or "")
+
+    event_type = event.get("type")
+    data_object = event.get("data", {}).get("object", {})
+    metadata = data_object.get("metadata", {})
+    user_id = metadata.get("user_id")
+    if not user_id:
+        return
+
+    user = db.get(models.User, user_id)
+    if not user:
+        return
+
+    if event_type == "checkout.session.completed":
+        user.credits += settings.default_credit_pack
+        db.add(
+            models.Payment(
+                user_id=user.id,
+                stripe_charge=data_object.get("id", "unknown"),
+                credits=settings.default_credit_pack,
+                checkout_session=data_object.get("id"),
+            )
+        )
+        db.add(user)
+        db.commit()
+    elif event_type == "invoice.payment_failed":
+        user.is_active = False
+        db.add(user)
+        db.commit()
 
 
 @router.get("/usage", response_model=schemas.UsageResponse)

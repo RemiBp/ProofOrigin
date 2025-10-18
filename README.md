@@ -78,12 +78,12 @@ Déploiement type :
 
 ## 🧭 Parcours utilisateur
 
-1. **Inscription** – `POST /api/v1/register` → génération de la paire Ed25519 chiffrée + crédit initial.
+1. **Inscription** – `POST /api/v1/auth/register` → génération de la paire Ed25519 chiffrée + crédit initial.
 2. **Vérification e-mail** – `POST /api/v1/verify-email` (token reçu par mail simulé) ou `POST /api/v1/request-verification` pour renvoyer le lien.
-3. **Connexion** – `POST /api/v1/login` (OAuth2 password) → réception `access_token` + `refresh_token`.
+3. **Connexion** – `POST /api/v1/auth/login` (OAuth2 password) → réception `access_token` + `refresh_token`.
 4. **Rotation/gestion de clé** – `POST /api/v1/rotate-key` ou `/api/v1/upload-key` pour remplacer la clé privée (revocation loggée).
-5. **Génération de preuve** – `POST /api/v1/generate_proof` (multipart `file`, `metadata`, `key_password`). Retour JSON + artefact `.proof` stocké côté serveur.
-6. **Vérification** – `POST /api/v1/verify_proof` (JSON) ou `/api/v1/verify_proof/file` (multipart) → statut signature + ancrage.
+5. **Génération de preuve** – `POST /api/v1/register` (texte ou fichier) ou `POST /api/v1/generate_proof` pour les clients historiques. Retour JSON + artefact `.proof`.
+6. **Vérification** – `GET /api/v1/verify/{hash}` (recherche rapide) ou `POST /api/v1/verify_proof`/`/verify_proof/file` pour une validation cryptographique.
 7. **Listing & détails** – `GET /api/v1/user/proofs` (pagination) & `GET /api/v1/proofs/{id}` ou `/api/v1/ledger/{id}` pour la vue ledger complète.
 8. **Similarité** – `POST /api/v1/search-similar` (texte ou fichier) → top matches & métriques, création d'alertes/relations.
 9. **Quotas & facturation** – `GET /api/v1/usage`, `POST /api/v1/buy-credits` (Stripe ou mode démo).
