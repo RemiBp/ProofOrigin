@@ -45,6 +45,18 @@ services:
         value: "true"
       - key: PROOFORIGIN_SENTRY_DSN
         sync: false
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
   - type: web
     name: prooforigin-frontend
     env: node
@@ -100,6 +112,18 @@ services:
         value: "false"
       - key: PROOFORIGIN_SENTRY_DSN
         sync: false
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
   - type: worker
     name: prooforigin-scheduler
     env: docker
@@ -131,6 +155,18 @@ services:
         sync: false
       - key: PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL
         value: sentence-transformers/all-MiniLM-L6-v2
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
   - type: redis
     name: prooforigin-redis
     plan: standard

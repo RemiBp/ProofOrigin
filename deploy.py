@@ -66,6 +66,9 @@ def load_config() -> dict[str, object]:
             "enabled": False,
             "rpc_url": "https://polygon-rpc.com",
             "private_key": None,
+            "contract_address": None,
+            "contract_abi": None,
+            "chain_id": 137,
         },
         "stripe": {
             "api_key": None,
@@ -108,6 +111,9 @@ def write_env_file(config: dict[str, object]) -> None:
                 "PROOFORIGIN_BLOCKCHAIN_ENABLED=true",
                 f"WEB3_RPC_URL={blockchain.get('rpc_url', '')}",
                 f"WEB3_PRIVATE_KEY={blockchain.get('private_key', '')}",
+                f"CONTRACT_ADDRESS={blockchain.get('contract_address', '')}",
+                f"CONTRACT_ABI={json.dumps(blockchain.get('contract_abi')) if blockchain.get('contract_abi') else ''}",
+                f"WEB3_CHAIN_ID={blockchain.get('chain_id', '')}",
             ]
         )
     stripe = config.get("stripe", {}) or {}

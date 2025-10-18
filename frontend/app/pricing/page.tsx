@@ -1,3 +1,28 @@
+"use client";
+
+import Link from "next/link";
+
+import { useTranslations } from "../../components/i18n/language-provider";
+
+export default function PricingPage() {
+  const t = useTranslations();
+  return (
+    <section className="glass-card" style={{ gap: "2rem" }}>
+      <header>
+        <h1 style={{ margin: 0, fontSize: "2.6rem" }}>{t.pricing.heading}</h1>
+        <p style={{ margin: 0, color: "var(--primary)" }}>{t.pricing.subheading}</p>
+      </header>
+      <div className="grid grid-two">
+        {t.pricing.plans.map((plan) => (
+          <article
+            key={plan.name}
+            className="glass-card"
+            style={{ borderWidth: plan.highlight ? 2 : 1, borderColor: plan.highlight ? "var(--primary)" : undefined }}
+          >
+            <h2 style={{ margin: 0 }}>{plan.name}</h2>
+            <p style={{ margin: "0.25rem 0", fontSize: "2rem", fontWeight: 700 }}>
+              {plan.price} {t.pricing.priceSuffix}
+            </p>
 import Link from "next/link";
 
 const plans = [
@@ -58,12 +83,17 @@ export default function PricingPage() {
               ))}
             </ul>
             <Link className="btn btn-primary" href={`/dashboard?plan=${plan.value}`}>
+              {t.pricing.choosePlan}
               Choisir ce plan
             </Link>
           </article>
         ))}
       </div>
       <div className="cta-banner">
+        <h3 style={{ margin: 0 }}>{t.pricing.contactTitle}</h3>
+        <p style={{ margin: 0 }}>{t.pricing.contactDescription}</p>
+        <a className="btn btn-secondary" href="mailto:hello@prooforigin.com">
+          {t.pricing.contactButton}
         <h3 style={{ margin: 0 }}>Besoin d’un onboarding assisté ?</h3>
         <p style={{ margin: 0 }}>Contactez notre équipe pour connecter votre bucket S3, configurer Stripe et automatiser vos webhooks.</p>
         <a className="btn btn-secondary" href="mailto:hello@prooforigin.com">

@@ -10,7 +10,7 @@ ProofOrigin fournit une chaîne complète pour prouver l'origine de contenus num
 | 📄 **Gestion de preuves** | Endpoint multipart `generate_proof`, signature Ed25519, stockage hash SHA-256, attribution automatique à un batch d'ancrage, journalisation d'usage et décrément des crédits. |
 | 🔍 **Similarité & indexation** | pHash/dHash (`imagehash`), embeddings SBERT + CLIP (`sentence-transformers`), index JSON `similarity_index`, moteur hybride cosinus/Hamming, API `search-similar`, création d'alertes & relations de preuves. |
 | 💳 **Facturation** | Intégration Stripe (ou simulation), enregistrement des paiements/checkout sessions, suivi des crédits, endpoint `usage` avec prochaine fenêtre d'ancrage. |
-| ⛓️ **Ancrage blockchain** | Batching Merkle (`anchor_batches`), signature unique via Web3/simulation, mise à jour groupée des preuves (`blockchain_tx`, `anchor_signature`, `anchored_at`). |
+| ⛓️ **Ancrage blockchain** | Ancrage instantané sur Polygon via `ProofOriginRegistry` (évènement `recordProof`), fallback batch Merkle (`anchor_batches`) ou OpenTimestamps, champ `blockchain_tx` stockant l'URL PolygonScan. |
 | 🧭 **Ledger & admin** | Endpoint `/ledger/{id}` avec détails complet, exports d'evidence pack (`/report`), API `/admin` pour lister utilisateurs/proofs et suivre les matches suspects. |
 | 🛠️ **Ops & monitoring** | Endpoint `/healthz`, journalisation JSON (`structlog`), scripts CLI, export `.proof`, tableau de bord web minimaliste (inscription → génération → vérification). |
 | 🖥️ **Frontend Next.js** | Landing futuriste, upload connecté à l’API publique, vérification `/verify/:hash`, dashboard usage/Stripe et pages pricing prêtes pour Render. |
@@ -70,6 +70,8 @@ Déploiement type :
 | `PROOFORIGIN_STRIPE_API_KEY` / `PROOFORIGIN_STRIPE_PRICE_ID` | Active le mode facturation Stripe. |
 | `PROOFORIGIN_STRIPE_PRICE_PRO` / `PROOFORIGIN_STRIPE_PRICE_BUSINESS` | Identifiants Stripe Checkout pour les plans Pro et Business (fallback simulé si absent). |
 | `WEB3_RPC_URL` / `WEB3_PRIVATE_KEY` / `PROOFORIGIN_BLOCKCHAIN_ENABLED` | Active l'ancrage réel sur une blockchain compatible EVM. |
+| `CONTRACT_ADDRESS` / `CONTRACT_ABI` | Adresse + ABI JSON du contrat `ProofOriginRegistry` déployé sur Polygon. |
+| `WEB3_CHAIN_ID` | Force le `chainId` (137 = Polygon mainnet, 80002 = Amoy testnet). |
 | `PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL` | Modèle SBERT à charger (par défaut `all-MiniLM-L6-v2`). |
 | `PROOFORIGIN_STORAGE_BACKEND` | `local` (par défaut) ou `s3` pour externaliser les fichiers. |
 | `PROOFORIGIN_STORAGE_S3_*` | Endpoint, bucket, clés d'accès/secret et région pour l'object storage. |
@@ -134,9 +136,9 @@ Le script `scripts/verify_proof.py` permet une validation hors ligne complète (
 - `GET /api/v1/usage` : expose preuves générées, vérifications et dernier paiement.
 
 ## ⛓️ Blockchain
-- `schedule_anchor(proof_id)` (tâche de fond) regroupe le batch (`anchor_batches`), calcule la racine de Merkle et signe via Web3 (ou simulation).
-- Si Web3 indisponible, un hash simulé est stocké (`simulated://...`) mais la racine est conservée.
-- Les colonnes `blockchain_tx`, `anchor_signature`, `anchored_at`, `anchor_batch_id` sont alimentées et consultables via `/ledger/{id}` ou `/dashboard`.
+- `PolygonAnchor` (service Python) appelle `recordProof(bytes32)` sur le contrat [`contracts/ProofOriginRegistry.sol`](./contracts/ProofOriginRegistry.sol) et stocke le `transaction_hash` dans `proofs.blockchain_tx`.
+- Les preuves sont ancrées en temps réel lors du `POST /api/v1/register`; en absence de configuration Web3, un fallback batch Merkle + OpenTimestamps est planifié (Celery) pour conserver une preuve temporelle.
+- La page `/verify/<hash>` et le dashboard exposent un lien PolygonScan (`https://polygonscan.com/tx/<transaction_hash>`). Les colonnes `blockchain_tx`, `anchor_signature`, `anchored_at`, `anchor_batch_id` restent accessibles via `/ledger/{id}`.
 
 ## 🖥️ UI & UX
 - Frontend **Next.js 14** (`frontend/`) avec design glassmorphism inspiré Revolut.

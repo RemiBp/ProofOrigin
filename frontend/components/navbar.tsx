@@ -1,3 +1,12 @@
+"use client";
+
+import Link from "next/link";
+import { ThemeToggle } from "./theme-toggle";
+import { LanguageToggle } from "./language-toggle";
+import { useTranslations } from "./i18n/language-provider";
+
+export function NavBar() {
+  const t = useTranslations();
 import Link from "next/link";
 import { ThemeToggle } from "./theme-toggle";
 
@@ -12,6 +21,12 @@ export function NavBar() {
       </Link>
       <nav style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
         <Link href="/pricing" className="btn btn-secondary" style={{ paddingInline: "1.2rem" }}>
+          {t.nav.pricing}
+        </Link>
+        <Link href="/dashboard" className="btn btn-secondary" style={{ paddingInline: "1.2rem" }}>
+          {t.nav.dashboard}
+        </Link>
+        <LanguageToggle />
           Tarifs
         </Link>
         <Link href="/dashboard" className="btn btn-secondary" style={{ paddingInline: "1.2rem" }}>

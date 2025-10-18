@@ -39,6 +39,16 @@
     <canvas id="proofs-chart" height="120"></canvas>
 </section>
 
+</section>
+
+<section class="glass-card" style="padding: 3rem; margin-bottom: 3rem;">
+    <div class="card-header" style="margin-bottom: 1.6rem;">
+        <div class="card-title"><span class="icon"><i class="fas fa-chart-column"></i></span> Activité des preuves</div>
+        <span class="badge info">Répartition quotidienne</span>
+    </div>
+    <canvas id="proofs-chart" height="120"></canvas>
+</section>
+
 <section class="glass-card" style="padding: 3rem;">
     <div class="card-header">
         <div class="card-title"><span class="icon"><i class="fas fa-database"></i></span> Registre personnel</div>
@@ -77,6 +87,13 @@
         const fallbackProofs = JSON.parse(document.getElementById('proofs-data').textContent || '[]');
         const { showToast, withLoading, formatDate, truncateHash } = window.ProofOrigin;
 
+        const explorerBase = 'https://polygonscan.com/tx/';
+
+        function buildExplorerUrl(tx) {
+            if (!tx) return null;
+            return tx.startsWith('http') ? tx : `${explorerBase}${tx.replace(/^https?:\/\/[^/]+\/tx\//, '')}`;
+        }
+
         function renderProofs(items) {
             tableBody.innerHTML = '';
             if (!items.length) {
@@ -92,6 +109,7 @@
 
             items.forEach((item) => {
                 const row = document.createElement('tr');
+                const explorerUrl = buildExplorerUrl(item.blockchain_tx);
                 const badge = item.blockchain_tx ? `<span class="badge success">Ancré</span>` : `<span class="badge warning">En attente</span>`;
                 const matches = (item.matches || []).map(match => `${(match.score * 100).toFixed(1)}%`).slice(0, 2).join(', ') || '—';
                 const badgeUrl = `/badge/${item.file_hash}.svg`;
@@ -102,6 +120,7 @@
                     </td>
                     <td>${formatDate(item.created_at)}</td>
                     <td><code>${truncateHash(item.file_hash, 20)}</code></td>
+                    <td>${explorerUrl ? `<a href="${explorerUrl}" target="_blank" rel="noopener">Voir la transaction</a>` : badge}</td>
                     <td>${item.blockchain_tx ? `<a href="${item.blockchain_tx}" target="_blank" rel="noopener">Voir la transaction</a>` : badge}</td>
                     <td>${matches}</td>
                     <td style="display:flex; gap:0.4rem; flex-wrap:wrap;">
@@ -111,6 +130,59 @@
                 `;
                 tableBody.appendChild(row);
             });
+        }
+
+        function updateMetrics(usage, items) {
+            document.getElementById('metric-proofs').textContent = items.length;
+            document.getElementById('metric-credits').textContent = usage?.remaining_credits ?? '—';
+            document.getElementById('metric-billing').textContent = usage?.last_payment ? formatDate(usage.last_payment) : '—';
+            const anchored = items.filter(item => Boolean(item.blockchain_tx)).length;
+            document.getElementById('metric-anchored').textContent = `${anchored}/${items.length}`;
+            const lastDay = items.filter(item => {
+                const created = new Date(item.created_at);
+                return Date.now() - created.getTime() <= 1000 * 60 * 60 * 24;
+            }).length;
+            document.getElementById('metric-proofs-24h').textContent = lastDay;
+            document.getElementById('metric-webhooks').textContent = Math.max(items.length * 2, usage?.verifications_performed ?? 0);
+        }
+
+        function buildChart(items) {
+            if (!window.Chart) return;
+            const byDay = {};
+            items.forEach((item) => {
+                const day = new Date(item.created_at).toISOString().slice(0, 10);
+                byDay[day] = (byDay[day] || 0) + 1;
+            });
+            const labels = Object.keys(byDay).sort();
+            const data = labels.map(label => byDay[label]);
+            const ctx = document.getElementById('proofs-chart');
+            if (!ctx) return;
+            if (ctx.chartInstance) {
+                ctx.chartInstance.destroy();
+            }
+            ctx.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Preuves créées',
+                        data,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.25)',
+                        tension: 0.4,
+                        fill: true,
+                    }],
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                    },
+                },
+            });
+        }
+
         }
 
         function updateMetrics(usage, items) {

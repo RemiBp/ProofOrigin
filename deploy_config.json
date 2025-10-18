@@ -5,7 +5,10 @@
   "blockchain": {
     "enabled": false,
     "rpc_url": "https://polygon-rpc.com",
-    "private_key": null
+    "private_key": null,
+    "contract_address": null,
+    "contract_abi": null,
+    "chain_id": 137
   },
   "stripe": {
     "api_key": null,

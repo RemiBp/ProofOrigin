@@ -19,6 +19,13 @@ class TimestampAuthority:
 
     def prepare_anchor(self, db: Session, proof: models.Proof, task_queue) -> None:
         backend = getattr(self.settings, "timestamp_backend", "blockchain")
+        if proof.blockchain_tx:
+            logger.info(
+                "timestamp_already_anchored",
+                proof_id=str(proof.id),
+                tx=proof.blockchain_tx,
+            )
+            return
         if backend == "opentimestamps":
             commitment = hashlib.sha256(
                 f"{proof.file_hash}:{proof.created_at.isoformat()}".encode()

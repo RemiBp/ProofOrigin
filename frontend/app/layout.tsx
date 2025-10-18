@@ -4,6 +4,7 @@ import "../styles/globals.css";
 
 import { Footer } from "../components/footer";
 import { NavBar } from "../components/navbar";
+import { LanguageProvider } from "../components/i18n/language-provider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -17,6 +18,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr">
       <body className={inter.className} data-theme="light">
+        <LanguageProvider>
+          <NavBar />
+          <main>{children}</main>
+          <Footer />
+        </LanguageProvider>
         <NavBar />
         <main>{children}</main>
         <Footer />

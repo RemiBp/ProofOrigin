@@ -21,6 +21,10 @@ from prooforigin.core.security import (
     sign_hash,
 )
 from prooforigin.core.settings import Settings, get_settings
+from prooforigin.services.onchain import (
+    OnChainConfigurationError,
+    PolygonAnchor,
+)
 from prooforigin.services.similarity import SimilarityEngine
 from prooforigin.services.storage import get_storage_service
 from prooforigin.services.timestamp import TimestampAuthority
@@ -54,6 +58,7 @@ class ProofRegistrationService:
         self.storage_service = get_storage_service()
         self.task_queue = get_task_queue()
         self.timestamp_authority = TimestampAuthority(self.settings)
+        self.onchain_anchor = PolygonAnchor(self.settings)
 
     # ------------------------------------------------------------------
     def _parse_metadata(self, metadata_raw: str | None) -> dict[str, Any]:
@@ -215,6 +220,29 @@ class ProofRegistrationService:
         db.add(proof)
         db.flush()
 
+        if self.onchain_anchor.is_configured:
+            try:
+                anchor_result = self.onchain_anchor.anchor_hash(file_hash)
+            except OnChainConfigurationError as exc:
+                logger.warning("onchain_configuration_error", error=str(exc))
+            except Exception as exc:  # pragma: no cover - external dependency
+                logger.error("onchain_anchor_failed", error=str(exc))
+            else:
+                proof.blockchain_tx = anchor_result.transaction_hash
+                proof.anchor_signature = anchor_result.anchor_signature
+                proof.anchored_at = anchor_result.anchored_at
+                queue_event(
+                    user.id,
+                    "proof.anchored",
+                    {
+                        "proof_id": str(proof.id),
+                        "transaction_hash": anchor_result.transaction_hash,
+                        "anchored_at": anchor_result.anchored_at.isoformat(),
+                    },
+                )
+        if not proof.blockchain_tx:
+            self._assign_to_anchor_batch(db, proof)
+            self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
         self._assign_to_anchor_batch(db, proof)
         self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
         self._persist_original_file(proof, db, content.data, content.filename, content.mime_type)
