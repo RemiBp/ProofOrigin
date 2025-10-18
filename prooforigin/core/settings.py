@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     password_memory_cost: int = 64 * 1024
     password_parallelism: int = 2
     private_key_master_key: str | None = None
+    secrets_backend: Literal["local", "aws_kms", "vault"] = "local"
+    aws_kms_key_id: str | None = None
+    aws_region: str | None = None
+    kms_encrypted_master_key: str | None = None
+    vault_addr: str | None = None
+    vault_token: str | None = None
+    vault_master_key_path: str | None = None
+    hsm_library_path: str | None = None
+    creator_key_device_binding: bool = True
 
     # Similarity / ML
     enable_faiss: bool = False
@@ -42,6 +51,9 @@ class Settings(BaseSettings):
     # Stripe / billing
     stripe_api_key: str | None = None
     stripe_price_id: str | None = None
+    stripe_price_pro: str | None = None
+    stripe_price_business: str | None = None
+    stripe_webhook_secret: str | None = None
     default_credit_pack: int = 100
 
     # Storage
@@ -60,9 +72,18 @@ class Settings(BaseSettings):
     blockchain_private_key: str | None = None
     blockchain_chain_id: int | None = None
     blockchain_enabled: bool = False
+    blockchain_contract_address: str | None = None
+    blockchain_contract_abi: str | None = None
     anchor_batch_size: int = 10
     anchor_retry_limit: int = 3
     anchor_poll_interval_seconds: int = 15
+    timestamp_backend: Literal["blockchain", "opentimestamps"] = "blockchain"
+    opentimestamps_endpoint: str | None = None
+    multi_anchor_targets: list[str] = Field(default_factory=lambda: ["polygon", "opentimestamps"])
+    merkle_batch_interval_seconds: int = 30
+    ledger_signing_key: str | None = None
+    ledger_signing_cert: str | None = None
+    transparency_log_namespace: str = "primary"
 
     # Task queue
     task_queue_backend: Literal["inline", "celery"] = "inline"
@@ -76,6 +97,14 @@ class Settings(BaseSettings):
 
     # Metadata validation
     metadata_schema_path: Path | None = None
+
+    # Portable proofs / pipeline
+    pipeline_target_size: int = 2048
+    pipeline_version: str = "v2"
+    c2pa_signing_profile: str = "ProofOrigin/1.0"
+    c2pa_signing_key: str | None = None
+    c2pa_signing_cert: str | None = None
+    verifier_script_cdn_url: str | None = None
 
     # Rate limiting / monitoring
     rate_limit_requests: int = 100
@@ -117,9 +146,10 @@ class Settings(BaseSettings):
             if len(key) < 32:
                 key = key.ljust(32, b"0")
             return key[:32]
-        # Development fallback – for production deployments this must be overridden.
-        dev_key = (self.secret_key + "::prooforigin")[:32]
-        return dev_key.encode()
+        from prooforigin.core.secrets import MasterKeyProvider  # local import to avoid cycle
+
+        provider = MasterKeyProvider(self)
+        return provider.get_master_key()
 
 
 @lru_cache()

@@ -90,6 +90,30 @@ class StorageService:
             raise StorageError("Failed to build download URL") from exc
         return url
 
+    def read(self, storage_ref: str) -> bytes:
+        """Retrieve the raw bytes for a stored artifact."""
+
+        if self.settings.storage_backend == "local":
+            return Path(storage_ref).read_bytes()
+
+        assert self._client is not None
+        try:
+            response = self._client.get_object(
+                Bucket=self.settings.storage_s3_bucket,
+                Key=storage_ref,
+            )
+        except ClientError as exc:  # pragma: no cover - network
+            error_code = (
+                str(getattr(exc, "response", {}).get("Error", {}).get("Code", "")).lower()
+            )
+            if error_code in {"nosuchkey", "404"}:
+                raise FileNotFoundError(storage_ref) from exc
+            logger.error("s3_read_failed", error=str(exc), key=storage_ref)
+            raise StorageError("Failed to read object from S3") from exc
+
+        body = response.get("Body")
+        return body.read() if hasattr(body, "read") else body or b""
+
 
 _storage_service: StorageService | None = None
 

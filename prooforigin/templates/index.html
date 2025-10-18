@@ -1,266 +1,538 @@
 {% extends "base.html" %}
-{% block title %}ProofOrigin - Authentifiez vos contenus{% endblock %}
+{% block title %}ProofOrigin · L'ADN de confiance de vos créations{% endblock %}
 {% block content %}
-<section class="hero">
-    <h1 class="hero-title">ProofOrigin</h1>
-    <p class="hero-subtitle">
-        Enregistrez, vérifiez et suivez l'origine de vos contenus en quelques secondes grâce à notre API sécurisée.
-    </p>
+<section class="glass-card" id="hero" style="margin-bottom: 3.5rem; padding: 3rem 3.4rem;">
+    <div class="pill"><i class="fas fa-sparkles"></i> Nouvelle génération de preuve d'origine</div>
+    <div style="display: grid; gap: 2.4rem; margin-top: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: center;">
+        <div style="display: grid; gap: 1.4rem;">
+            <h1 class="section-title" style="font-size: 3rem; line-height: 1.1;">
+                Protégez, certifiez et monétisez vos créations à l'échelle mondiale.
+            </h1>
+            <p class="section-subtitle" style="margin: 0; font-size: 1.05rem;">
+                ProofOrigin combine ancrage blockchain, timestamping notariel, certificats PDF et APIs temps réel pour vous permettre
+                de prouver l'origine de n'importe quel contenu en quelques millisecondes. Pensé pour les studios créatifs,
+                les plateformes IA et les marques internationales.
+            </p>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.9rem;">
+                <a class="btn btn-primary" href="#onboarding"><i class="fas fa-rocket"></i> Démarrer</a>
+                <a class="btn btn-ghost" href="#api"><i class="fas fa-book-open"></i> Explorer l'API</a>
+            </div>
+            <div class="grid grid-3" style="margin-top: 1.2rem;">
+                <div>
+                    <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-bolt"></i></span> Temps réel</div>
+                    <p class="card-subtitle">Hash & signature générés en &lt; 800 ms.</p>
+                </div>
+                <div>
+                    <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-layer-group"></i></span> Multi-chaînes</div>
+                    <p class="card-subtitle">Polygon, Base, Arbitrum & OpenTimestamps.</p>
+                </div>
+                <div>
+                    <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-plug"></i></span> Webhooks instantanés</div>
+                    <p class="card-subtitle">Notification automatique de chaque preuve.</p>
+                </div>
+            </div>
+        </div>
+        <div class="glass-card" style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(79, 70, 229, 0.35); box-shadow: var(--shadow-md);">
+            <div style="display: grid; gap: 1.1rem;">
+                <div style="display:flex; align-items:center; gap:0.9rem;">
+                    <div class="logo-icon" style="width: 2.6rem; height: 2.6rem; font-size: 1rem;">ID</div>
+                    <div>
+                        <strong style="font-size: 1.05rem;">Certificat ProofOrigin</strong>
+                        <p style="font-size: 0.85rem; color: var(--text-muted);">Signature serveur + horodatage inviolable</p>
+                    </div>
+                </div>
+                <div style="background: rgba(15, 23, 42, 0.75); color: #e2e8f0; border-radius: 18px; padding: 1.35rem; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.7;">
+                    {
+                    <br>&nbsp;&nbsp;"hash": "0xf83a...c1d4",
+                    <br>&nbsp;&nbsp;"timestamp": "{{ current_iso | default('2024-01-08T19:32:41Z') }}",
+                    <br>&nbsp;&nbsp;"signature": "server:ed25519",
+                    <br>&nbsp;&nbsp;"blockchain": "polygon",
+                    <br>&nbsp;&nbsp;"owner": "studio@prooforigin.io"
+                    <br>}
+                </div>
+                <div style="display: flex; gap: 0.8rem; flex-wrap: wrap;">
+                    <span class="badge success"><i class="fas fa-shield-check"></i> Badge dynamique</span>
+                    <span class="badge info"><i class="fas fa-chart-line"></i> Dashboard usage</span>
+                    <span class="badge warning"><i class="fas fa-bell"></i> Alertes webhooks</span>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
 
-<div class="grid grid-3" style="margin-top: 2rem;">
-    <div class="card" id="register-card">
+<section id="onboarding" class="grid grid-auto" style="gap: 2rem; margin-bottom: 3.5rem;">
+    <article class="glass-card" style="padding: 2.4rem;">
         <div class="card-header">
-            <h2 class="card-title"><i class="fas fa-user-plus"></i> Créer un compte</h2>
-            <p class="card-subtitle">Générez une paire de clés Ed25519 sécurisée</p>
+            <div class="card-title"><span class="icon"><i class="fas fa-user-plus"></i></span> 1. Créez votre compte</div>
+            <span class="badge info">JWT + OAuth2</span>
         </div>
-        <div class="card-body">
-            <form id="register-form">
+        <p class="card-subtitle" style="margin-bottom: 1.5rem;">Paire de clés Ed25519 chiffrée côté serveur, accès immédiat aux endpoints et génération automatique de clé API.</p>
+        <form id="register-form" class="grid" style="gap: 1.2rem;">
+            <div class="grid grid-2">
                 <div class="form-group">
-                    <label class="form-label" for="register-email">Email</label>
-                    <input type="email" id="register-email" name="email" class="form-input" required>
+                    <label class="form-label" for="register-email">Email professionnel</label>
+                    <input type="email" id="register-email" name="email" class="form-input" placeholder="crea@studio.com" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="register-name">Nom d'affichage</label>
-                    <input type="text" id="register-name" name="display_name" class="form-input" required>
+                    <input type="text" id="register-name" name="display_name" class="form-input" placeholder="Studio Nova" required>
                 </div>
-                <div class="form-group">
-                    <label class="form-label" for="register-password">Mot de passe</label>
-                    <input type="password" id="register-password" name="password" class="form-input" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Créer le compte</button>
-            </form>
-            <div class="feedback" id="register-feedback"></div>
-        </div>
-    </div>
-
-    <div class="card" id="login-card">
-        <div class="card-header">
-            <h2 class="card-title"><i class="fas fa-sign-in-alt"></i> Se connecter</h2>
-            <p class="card-subtitle">Obtenez un jeton d'accès pour l'API</p>
-        </div>
-        <div class="card-body">
-            <form id="login-form">
-                <div class="form-group">
-                    <label class="form-label" for="login-email">Email</label>
-                    <input type="email" id="login-email" name="email" class="form-input" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="login-password">Mot de passe</label>
-                    <input type="password" id="login-password" name="password" class="form-input" required>
-                </div>
-                <button type="submit" class="btn btn-secondary">Connexion</button>
-            </form>
-            <div class="feedback" id="login-feedback"></div>
-        </div>
-    </div>
-
-    <div class="card" id="usage-card">
-        <div class="card-header">
-            <h2 class="card-title"><i class="fas fa-gauge"></i> Crédit & usage</h2>
-            <p class="card-subtitle">Visualisez vos quotas en temps réel</p>
-        </div>
-        <div class="card-body">
-            <p>Preuves générées : <strong id="usage-proofs">-</strong></p>
-            <p>Vérifications : <strong id="usage-verifications">-</strong></p>
-            <p>Crédits restants : <strong id="usage-credits">-</strong></p>
-            <button class="btn btn-success" id="refresh-usage">Actualiser</button>
-        </div>
-    </div>
-</div>
-
-<div class="card" style="margin-top: 2rem;">
-    <div class="card-header">
-        <h2 class="card-title"><i class="fas fa-file-shield"></i> Générer une preuve</h2>
-        <p class="card-subtitle">Téléversez un fichier et obtenez un artefact .proof signé</p>
-    </div>
-    <div class="card-body">
-        <form id="generate-form" enctype="multipart/form-data">
+            </div>
             <div class="grid grid-2">
                 <div class="form-group">
-                    <label class="form-label" for="generate-file">Fichier</label>
-                    <input type="file" id="generate-file" name="file" class="form-input" required>
+                    <label class="form-label" for="register-password">Mot de passe</label>
+                    <input type="password" id="register-password" name="password" class="form-input" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="register-siret">SIRET / Identifiant société (optionnel)</label>
+                    <input type="text" id="register-siret" name="siret" class="form-input" placeholder="882 123 456 00017">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary" id="register-submit"><i class="fas fa-magic-wand-sparkles"></i> Ouvrir mon espace sécurisé</button>
+            <div id="register-feedback" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+        </form>
+    </article>
+
+    <article class="glass-card" style="padding: 2.4rem;">
+        <div class="card-header">
+            <div class="card-title"><span class="icon"><i class="fas fa-right-to-bracket"></i></span> 2. Authentifiez-vous</div>
+            <span class="badge success">JWT 60 min</span>
+        </div>
+        <p class="card-subtitle" style="margin-bottom: 1.5rem;">Connexion email/mot de passe ou OAuth2 (Google, GitHub, Apple). Rafraîchissement automatique du token.</p>
+        <form id="login-form" class="grid" style="gap: 1.2rem;">
+            <div class="form-group">
+                <label class="form-label" for="login-email">Email</label>
+                <input type="email" id="login-email" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="login-password">Mot de passe</label>
+                <input type="password" id="login-password" class="form-input" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-secondary" id="login-submit"><i class="fas fa-unlock"></i> Obtenir un jeton</button>
+            <div id="login-feedback" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+        </form>
+        <div style="margin-top: 1.3rem; display: grid; gap: 0.8rem; font-size: 0.9rem; color: var(--text-muted);">
+            <div><i class="fab fa-google"></i> Google OAuth • <i class="fab fa-github"></i> GitHub • <i class="fab fa-apple"></i> Apple ID</div>
+            <div>Clés API générées automatiquement : <code id="api-key-preview">—</code></div>
+        </div>
+    </article>
+
+    <article class="glass-card" style="padding: 2.4rem;">
+        <div class="card-header">
+            <div class="card-title"><span class="icon"><i class="fas fa-chart-simple"></i></span> 3. Surveillez vos usages</div>
+            <span class="badge warning">Temps réel</span>
+        </div>
+        <div class="grid" style="gap: 1.4rem;">
+            <div class="stat-card" style="display:flex; align-items:center; gap:1.2rem;">
+                <div class="logo-icon" style="width: 3rem; height: 3rem; font-size: 1.1rem; background: linear-gradient(135deg, rgba(99,102,241,0.8), rgba(14,165,233,0.8));">Σ</div>
+                <div>
+                    <strong style="font-size: 1.4rem;" id="usage-proofs">0</strong>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">Preuves générées</p>
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div>
+                    <div style="font-size: 2rem; font-weight: 700;" id="usage-verifications">0</div>
+                    <p class="card-subtitle">Vérifications effectuées</p>
+                </div>
+                <div>
+                    <div style="font-size: 2rem; font-weight: 700;" id="usage-credits">0</div>
+                    <p class="card-subtitle">Crédits disponibles</p>
+                </div>
+            </div>
+            <button type="button" class="btn btn-ghost" id="refresh-usage"><i class="fas fa-arrows-rotate"></i> Synchroniser</button>
+        </div>
+    </article>
+</section>
+
+<div class="divider"></div>
+
+<section id="proof-studio" class="grid" style="gap: 2.4rem; margin-bottom: 3.5rem;">
+    <article class="glass-card" style="padding: 2.6rem;">
+        <div class="card-header">
+            <div class="card-title"><span class="icon"><i class="fas fa-file-shield"></i></span> Générer une preuve</div>
+            <span class="badge success">Hash SHA-256 + PDF signé</span>
+        </div>
+        <form id="generate-form" enctype="multipart/form-data" class="grid" style="gap: 1.4rem;">
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label class="form-label" for="generate-file">Fichier (max 20 Mo)</label>
+                    <input type="file" id="generate-file" name="file" class="form-input" accept="*/*">
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="generate-password">Mot de passe de clé</label>
-                    <input type="password" id="generate-password" name="key_password" class="form-input" required>
+                    <input type="password" id="generate-password" name="key_password" class="form-input" placeholder="Mot de passe utilisé pour chiffrer la clé" required>
                 </div>
             </div>
             <div class="form-group">
-                <label class="form-label" for="generate-metadata">Métadonnées (JSON)</label>
-                <textarea id="generate-metadata" class="form-input" rows="4">{"title": "", "description": "", "tags": []}</textarea>
+                <label class="form-label" for="generate-text">Texte alternatif</label>
+                <textarea id="generate-text" name="text" class="form-textarea" placeholder="Collez ici un texte ou un prompt IA si vous ne téléversez pas de fichier."></textarea>
             </div>
-            <button type="submit" class="btn btn-primary">Créer la preuve</button>
+            <div class="form-group">
+                <label class="form-label" for="generate-metadata">Métadonnées JSON</label>
+                <textarea id="generate-metadata" name="metadata" class="form-textarea">{
+    "title": "Artwork #47",
+    "description": "Généré avec Stable Diffusion 3.5",
+    "tags": ["ai", "concept", "2024"],
+    "collection": "Futures"
+}</textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" id="generate-submit"><i class="fas fa-certificate"></i> Créer la preuve ultra-rapide</button>
         </form>
-        <pre class="code-block" id="generate-result"></pre>
-    </div>
-</div>
+        <pre class="code-block" id="generate-result" aria-live="polite">En attente d'une création…</pre>
+    </article>
 
-<div class="card" style="margin-top: 2rem;">
-    <div class="card-header">
-        <h2 class="card-title"><i class="fas fa-magnifying-glass"></i> Vérifier une preuve</h2>
-        <p class="card-subtitle">Vérifiez la signature via l'API</p>
-    </div>
-    <div class="card-body">
-        <form id="verify-form">
+    <article class="glass-card" style="padding: 2.6rem;">
+        <div class="card-header">
+            <div class="card-title"><span class="icon"><i class="fas fa-shield-halved"></i></span> Vérifier une preuve</div>
+            <span class="badge info">API publique</span>
+        </div>
+        <form id="verify-form" class="grid" style="gap: 1.2rem;">
             <div class="grid grid-2">
                 <div class="form-group">
                     <label class="form-label" for="verify-id">Identifiant de preuve</label>
-                    <input type="text" id="verify-id" class="form-input" required>
+                    <input type="text" id="verify-id" class="form-input" placeholder="UUID" required>
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="verify-signature">Signature (optionnel)</label>
-                    <input type="text" id="verify-signature" class="form-input">
+                    <input type="text" id="verify-signature" class="form-input" placeholder="Signature Ed25519">
                 </div>
             </div>
-            <button type="submit" class="btn btn-secondary">Vérifier</button>
+            <button type="submit" class="btn btn-secondary" id="verify-submit"><i class="fas fa-check-double"></i> Vérifier instantanément</button>
         </form>
-        <pre class="code-block" id="verify-result"></pre>
+        <pre class="code-block" id="verify-result" aria-live="polite">Prêt à contrôler vos artefacts…</pre>
+
+        <div class="divider" style="margin: 2rem 0;"></div>
+
+        <div class="glass-card" style="padding: 1.8rem; background: rgba(148, 163, 184, 0.08); border-style: dashed;">
+            <div class="card-title" style="font-size: 1.05rem;"><span class="icon"><i class="fas fa-bell"></i></span> Webhooks intelligents</div>
+            <p class="card-subtitle">Configurez des callbacks HTTP pour recevoir automatiquement le certificat PDF, les métadonnées et l'URL d'ancrage blockchain dès qu'une preuve est validée.</p>
+            <ul style="margin: 1rem 0 0 1.2rem; color: var(--text-secondary); font-size: 0.95rem; display: grid; gap: 0.4rem;">
+                <li><i class="fas fa-circle"></i> <code>proof.created</code> — livraison du hash, signature et badge SVG.</li>
+                <li><i class="fas fa-circle"></i> <code>proof.anchored</code> — diffusion du tx_id (Polygon, Base, Arbitrum).</li>
+                <li><i class="fas fa-circle"></i> <code>proof.verified</code> — notifications de vérification publiques.</li>
+            </ul>
+        </div>
+    </article>
+</section>
+
+<section id="features" class="glass-card" style="padding: 3rem; margin-bottom: 3.5rem;">
+    <div class="card-header" style="margin-bottom: 2rem;">
+        <div>
+            <div class="pill"><i class="fas fa-sitemap"></i> Écosystème complet</div>
+            <h2 class="section-title" style="margin-top: 1rem;">Proof-as-a-Service prêt pour l'entreprise</h2>
+        </div>
+        <a class="btn btn-secondary" href="#dashboard-preview"><i class="fas fa-gauge-high"></i> Voir le cockpit</a>
     </div>
-</div>
+    <div class="grid grid-3">
+        <div class="glass-card" style="padding: 1.9rem; background: var(--surface-soft);">
+            <div class="card-title"><span class="icon"><i class="fas fa-cubes"></i></span> API universelle</div>
+            <p class="card-subtitle">Endpoints REST, SDK Python & Node.js, documentation Swagger/ReDoc, génération automatique de clés API et quotas personnalisables.</p>
+        </div>
+        <div class="glass-card" style="padding: 1.9rem; background: var(--surface-soft);">
+            <div class="card-title"><span class="icon"><i class="fas fa-cloud-arrow-up"></i></span> Stockage souverain</div>
+            <p class="card-subtitle">Amazon S3, Google Cloud Storage ou disque Render. Sauvegardes vérifiées hebdomadaires et audit d'intégrité automatique.</p>
+        </div>
+        <div class="glass-card" style="padding: 1.9rem; background: var(--surface-soft);">
+            <div class="card-title"><span class="icon"><i class="fas fa-credit-card"></i></span> Monétisation intégrée</div>
+            <p class="card-subtitle">Stripe Billing : plans Free / Pro / Business, paiements à la preuve, facturation PDF automatisée, webhooks de statut.</p>
+        </div>
+    </div>
+</section>
 
+<section id="api" class="glass-card" style="padding: 3rem; margin-bottom: 3.5rem;">
+    <div class="card-header">
+        <div>
+            <div class="pill"><i class="fas fa-code"></i> ProofOrigin API</div>
+            <h2 class="section-title" style="margin-top: 1.1rem;">Endpoints prêts pour vos intégrations IA et plateformes</h2>
+        </div>
+    </div>
+    <div class="grid grid-auto" style="gap: 1.8rem;">
+        <div class="glass-card" style="padding: 1.8rem;">
+            <h3 class="card-title" style="font-size: 1.1rem;"><span class="icon"><i class="fas fa-fingerprint"></i></span> /api/v1/proof</h3>
+            <p class="card-subtitle">Enregistre un fichier ou un texte et renvoie hash + certificat + badge JSON/SVG. Support batch via <code>/api/v1/batch</code>.</p>
+        </div>
+        <div class="glass-card" style="padding: 1.8rem;">
+            <h3 class="card-title" style="font-size: 1.1rem;"><span class="icon"><i class="fas fa-search"></i></span> /api/v1/verify/:hash</h3>
+            <p class="card-subtitle">Recherche un hash, vérifie la signature, renvoie date + propriétaire et déclenche un webhook <code>proof.verified</code>.</p>
+        </div>
+        <div class="glass-card" style="padding: 1.8rem;">
+            <h3 class="card-title" style="font-size: 1.1rem;"><span class="icon"><i class="fas fa-robot"></i></span> /api/v1/ai/proof</h3>
+            <p class="card-subtitle">Scelle les sorties d'un modèle (prompt, metadata, hash) et émet un certificat "Generated by Model X" avec badge embarquable.</p>
+        </div>
+        <div class="glass-card" style="padding: 1.8rem;">
+            <h3 class="card-title" style="font-size: 1.1rem;"><span class="icon"><i class="fas fa-chart-column"></i></span> /api/v1/usage</h3>
+            <p class="card-subtitle">Expose quotas, crédits restants, dernières factures, et projections d'ancrage blockchain pour dashboards internes.</p>
+        </div>
+    </div>
+</section>
+
+<section id="badge" class="glass-card" style="padding: 3rem; margin-bottom: 4rem; display: grid; gap: 2.4rem;">
+    <div class="card-header" style="margin-bottom: 1rem;">
+        <div>
+            <div class="pill"><i class="fas fa-certificate"></i> Label ProofOrigin Certified</div>
+            <h2 class="section-title" style="margin-top: 1.2rem;">Affichez une confiance instantanée</h2>
+        </div>
+    </div>
+    <div class="grid grid-2" style="gap: 2.6rem; align-items: center;">
+        <div>
+            <p class="card-subtitle" style="margin-bottom: 1.8rem;">Chaque preuve génère un badge dynamique à intégrer en iframe ou JSON/SVG sur vos pages produit, portfolios ou marketplaces. Les visiteurs peuvent cliquer et vérifier l'authenticité en un instant.</p>
+            <ul style="display: grid; gap: 0.65rem; color: var(--text-secondary); font-size: 0.95rem;">
+                <li><i class="fas fa-circle"></i> <code>https://prooforigin.io/badge/&lt;hash&gt;</code></li>
+                <li><i class="fas fa-circle"></i> API de vérification publique & redirection automatique.</li>
+                <li><i class="fas fa-circle"></i> Mode clair/sombre synchronisé avec votre site.</li>
+            </ul>
+        </div>
+        <div class="glass-card" style="padding: 2.2rem; background: rgba(15, 23, 42, 0.85); color: #e2e8f0; border: 1px solid rgba(148, 163, 184, 0.25);">
+            <div style="display:flex; justify-content: space-between; align-items: center;">
+                <strong style="letter-spacing: 0.08em; text-transform: uppercase;">ProofOrigin Certified</strong>
+                <span class="badge success" style="background: rgba(16,185,129,0.25); color: #bbf7d0;">Validé</span>
+            </div>
+            <div style="margin-top: 1.4rem; display: grid; gap: 0.6rem; font-family: 'JetBrains Mono', monospace;">
+                <div>Hash&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: <span class="highlight">0x19fa…8b21</span></div>
+                <div>Owner&nbsp;&nbsp;&nbsp;&nbsp;: studio@prooforigin.io</div>
+                <div>Date&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {{ current_pretty | default('08 jan. 2024 19:32') }}</div>
+                <div>Blockchain : Polygon zkEVM</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="glass-card" style="padding: 3.5rem; text-align: center;">
+    <h2 class="section-title" style="margin-bottom: 1rem;">Prêt à déployer votre couche de confiance ?</h2>
+    <p class="section-subtitle" style="margin: 0 auto 2rem;">Lancez votre API ProofOrigin sur Render en un clic : worker Celery, scheduler, Redis, Postgres et stockage gérés. Nous avons automatisé la pipeline CI/CD pour une scalabilité horizontale.</p>
+    <div style="display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;">
+        <a class="btn btn-primary" href="https://render.com" target="_blank" rel="noopener"><i class="fas fa-cloud-bolt"></i> Déployer sur Render</a>
+        <a class="btn btn-secondary" href="/dashboard"><i class="fas fa-gauge"></i> Accéder au cockpit</a>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
 <script>
-const state = {
-    accessToken: localStorage.getItem('prooforigin_access') || null,
-    refreshToken: localStorage.getItem('prooforigin_refresh') || null,
-};
+    document.addEventListener('DOMContentLoaded', () => {
+        const state = {
+            accessToken: localStorage.getItem('prooforigin_access'),
+            refreshToken: localStorage.getItem('prooforigin_refresh'),
+        };
 
-function setTokens(access, refresh) {
-    state.accessToken = access;
-    state.refreshToken = refresh;
-    localStorage.setItem('prooforigin_access', access);
-    localStorage.setItem('prooforigin_refresh', refresh);
-}
+        const endpoints = {
+            register: '/api/v1/auth/register',
+            login: '/api/v1/auth/login',
+            refresh: '/api/v1/auth/token/refresh',
+            usage: '/api/v1/usage',
+            generate: '/api/v1/register',
+            verify: '/api/v1/verify_proof',
+        };
 
-async function request(url, options = {}) {
-    const headers = options.headers || {};
-    if (state.accessToken) {
-        headers['Authorization'] = `Bearer ${state.accessToken}`;
-    }
-    options.headers = headers;
-    const response = await fetch(url, options);
-    if (response.status === 401 && state.refreshToken) {
-        const refresh = await fetch('/api/v1/token/refresh', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ refresh_token: state.refreshToken })
-        });
-        if (refresh.ok) {
-            const data = await refresh.json();
-            setTokens(data.access_token, data.refresh_token);
-            headers['Authorization'] = `Bearer ${state.accessToken}`;
-            return fetch(url, options);
+        const { showToast, withLoading, formatDate } = window.ProofOrigin;
+
+        function setTokens(access, refresh) {
+            state.accessToken = access;
+            state.refreshToken = refresh;
+            if (access) {
+                localStorage.setItem('prooforigin_access', access);
+            }
+            if (refresh) {
+                localStorage.setItem('prooforigin_refresh', refresh);
+            }
+            updateAuthState();
         }
-    }
-    return response;
-}
 
-document.getElementById('register-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    const payload = {
-        email: form.email.value,
-        password: form.password.value,
-        display_name: form.display_name.value,
-    };
-    const response = await fetch('/api/v1/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    const feedback = document.getElementById('register-feedback');
-    if (response.ok) {
-        const data = await response.json();
-        feedback.textContent = `✅ Compte créé pour ${data.email}. Crédit initial : ${data.credits}`;
-    } else {
-        const error = await response.json();
-        feedback.textContent = `❌ ${error.detail || 'Erreur lors de la création du compte'}`;
-    }
-});
+        function clearTokens() {
+            state.accessToken = null;
+            state.refreshToken = null;
+            localStorage.removeItem('prooforigin_access');
+            localStorage.removeItem('prooforigin_refresh');
+            updateAuthState();
+        }
 
-document.getElementById('login-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    const payload = new URLSearchParams();
-    payload.append('username', form.email.value);
-    payload.append('password', form.password.value);
-    const response = await fetch('/api/v1/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: payload
-    });
-    const feedback = document.getElementById('login-feedback');
-    if (response.ok) {
-        const data = await response.json();
-        setTokens(data.access_token, data.refresh_token);
-        feedback.textContent = '✅ Authentification réussie. Vous pouvez maintenant générer des preuves.';
+        async function request(url, options = {}, retried = false) {
+            const headers = options.headers ? { ...options.headers } : {};
+            if (state.accessToken) {
+                headers['Authorization'] = `Bearer ${state.accessToken}`;
+            }
+            options.headers = headers;
+            const response = await fetch(url, options);
+            if (response.status === 401 && state.refreshToken && !retried) {
+                const refreshed = await fetch(endpoints.refresh, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh_token: state.refreshToken }),
+                });
+                if (refreshed.ok) {
+                    const data = await refreshed.json();
+                    setTokens(data.access_token, data.refresh_token);
+                    headers['Authorization'] = `Bearer ${data.access_token}`;
+                    return fetch(url, options);
+                }
+                clearTokens();
+            }
+            return response;
+        }
+
+        function updateAuthState() {
+            const hasToken = Boolean(state.accessToken);
+            const badge = document.getElementById('api-key-preview');
+            if (!badge) return;
+            if (hasToken) {
+                badge.textContent = 'Disponible depuis votre dashboard';
+            } else {
+                badge.textContent = 'Connectez-vous pour générer vos clés API';
+            }
+        }
+
+        async function loadUsage(button) {
+            if (!state.accessToken) {
+                document.getElementById('usage-proofs').textContent = '—';
+                document.getElementById('usage-verifications').textContent = '—';
+                document.getElementById('usage-credits').textContent = '—';
+                return;
+            }
+            await withLoading(button, async () => {
+                const response = await request(endpoints.usage);
+                if (!response.ok) {
+                    showToast('Impossible de récupérer les statistiques d\'usage.', 'error');
+                    return;
+                }
+                const data = await response.json();
+                document.getElementById('usage-proofs').textContent = data.proofs_generated ?? 0;
+                document.getElementById('usage-verifications').textContent = data.verifications_performed ?? 0;
+                document.getElementById('usage-credits').textContent = data.remaining_credits ?? 0;
+                showToast('Statistiques actualisées avec succès.', 'success');
+            }, 'Synchronisation…');
+        }
+
+        document.getElementById('register-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const button = document.getElementById('register-submit');
+            const payload = {
+                email: event.target.email.value,
+                display_name: event.target.display_name.value,
+                password: event.target.password.value,
+                siret: event.target.siret.value || null,
+            };
+            await withLoading(button, async () => {
+                const response = await fetch(endpoints.register, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const feedback = document.getElementById('register-feedback');
+                if (response.ok) {
+                    const data = await response.json();
+                    feedback.textContent = `✅ Compte créé pour ${data.email}. Crédit initial : ${data.credits} unités.`;
+                    showToast('Compte créé avec succès. Vérifiez votre boîte mail pour confirmer l\'adresse.', 'success');
+                } else {
+                    const error = await response.json().catch(() => ({ detail: 'Erreur inconnue' }));
+                    feedback.textContent = `❌ ${error.detail || 'Création impossible'}`;
+                    showToast(error.detail || 'Impossible de créer le compte', 'error');
+                }
+            }, 'Création…');
+        });
+
+        document.getElementById('login-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const button = document.getElementById('login-submit');
+            const formData = new URLSearchParams();
+            formData.append('username', event.target.querySelector('#login-email').value);
+            formData.append('password', event.target.querySelector('#login-password').value);
+            await withLoading(button, async () => {
+                const response = await fetch(endpoints.login, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData,
+                });
+                const feedback = document.getElementById('login-feedback');
+                if (response.ok) {
+                    const data = await response.json();
+                    setTokens(data.access_token, data.refresh_token);
+                    feedback.textContent = '✅ Authentification réussie. Vous pouvez générer des preuves.';
+                    showToast('Authentification réussie.', 'success');
+                    loadUsage();
+                } else {
+                    const error = await response.json().catch(() => ({ detail: 'Identifiants invalides' }));
+                    feedback.textContent = `❌ ${error.detail || 'Identifiants invalides'}`;
+                    showToast(error.detail || 'Impossible de se connecter', 'error');
+                }
+            }, 'Connexion…');
+        });
+
+        document.getElementById('refresh-usage').addEventListener('click', (event) => {
+            loadUsage(event.currentTarget);
+        });
+
+        document.getElementById('generate-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!state.accessToken) {
+                showToast('Authentifiez-vous pour générer une preuve.', 'error');
+                return;
+            }
+            const button = document.getElementById('generate-submit');
+            await withLoading(button, async () => {
+                const formData = new FormData();
+                const file = event.target.file.files[0];
+                const text = event.target.text.value.trim();
+                if (!file && !text) {
+                    showToast('Fournissez un fichier ou un texte.', 'error');
+                    return;
+                }
+                if (file) {
+                    formData.append('file', file);
+                }
+                if (text) {
+                    formData.append('text', text);
+                }
+                formData.append('key_password', event.target.key_password.value);
+                formData.append('metadata', event.target.metadata.value);
+
+                const response = await request(endpoints.generate, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = document.getElementById('generate-result');
+                if (response.ok) {
+                    const data = await response.json();
+                    result.textContent = JSON.stringify(data, null, 2);
+                    showToast('Preuve générée et signée avec succès.', 'success');
+                    loadUsage();
+                } else {
+                    const error = await response.json().catch(() => ({ detail: 'Erreur serveur' }));
+                    result.textContent = `Erreur : ${error.detail || 'Impossible de créer la preuve'}`;
+                    showToast(error.detail || 'Impossible de créer la preuve', 'error');
+                }
+            }, 'Signature…');
+        });
+
+        document.getElementById('verify-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const button = document.getElementById('verify-submit');
+            const payload = {
+                proof_id: event.target.querySelector('#verify-id').value,
+                signature: event.target.querySelector('#verify-signature').value || null,
+            };
+            await withLoading(button, async () => {
+                const response = await fetch(endpoints.verify, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const result = document.getElementById('verify-result');
+                if (response.ok) {
+                    const data = await response.json();
+                    result.textContent = JSON.stringify({ ...data, timestamp: formatDate(data.timestamp) }, null, 2);
+                    showToast('Preuve vérifiée avec succès.', 'success');
+                } else {
+                    const error = await response.json().catch(() => ({ detail: 'Erreur inconnue' }));
+                    result.textContent = `Erreur : ${error.detail || 'Vérification impossible'}`;
+                    showToast(error.detail || 'Vérification impossible', 'error');
+                }
+            }, 'Analyse…');
+        });
+
+        updateAuthState();
         loadUsage();
-    } else {
-        const error = await response.json();
-        feedback.textContent = `❌ ${error.detail || 'Identifiants invalides'}`;
-    }
-});
-
-async function loadUsage() {
-    if (!state.accessToken) { return; }
-    const response = await request('/api/v1/usage');
-    if (!response.ok) { return; }
-    const data = await response.json();
-    document.getElementById('usage-proofs').textContent = data.proofs_generated;
-    document.getElementById('usage-verifications').textContent = data.verifications_performed;
-    document.getElementById('usage-credits').textContent = data.remaining_credits;
-}
-
-document.getElementById('refresh-usage').addEventListener('click', loadUsage);
-
-loadUsage();
-
-document.getElementById('generate-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (!state.accessToken) {
-        alert('Veuillez vous authentifier d\'abord.');
-        return;
-    }
-    const form = event.target;
-    const formData = new FormData();
-    formData.append('file', form.file.files[0]);
-    formData.append('key_password', form.key_password.value);
-    formData.append('metadata', form.querySelector('#generate-metadata').value);
-
-    const response = await request('/api/v1/generate_proof', {
-        method: 'POST',
-        body: formData,
     });
-    const result = document.getElementById('generate-result');
-    if (response.ok) {
-        const data = await response.json();
-        result.textContent = JSON.stringify(data, null, 2);
-        loadUsage();
-    } else {
-        const error = await response.json();
-        result.textContent = `Erreur: ${error.detail || 'Impossible de créer la preuve'}`;
-    }
-});
-
-document.getElementById('verify-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const payload = {
-        proof_id: event.target.querySelector('#verify-id').value,
-        signature: event.target.querySelector('#verify-signature').value || null,
-    };
-    const response = await fetch('/api/v1/verify_proof', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    const result = document.getElementById('verify-result');
-    if (response.ok) {
-        const data = await response.json();
-        result.textContent = JSON.stringify(data, null, 2);
-    } else {
-        const error = await response.json();
-        result.textContent = `Erreur: ${error.detail || 'Vérification impossible'}`;
-    }
-});
 </script>
 {% endblock %}

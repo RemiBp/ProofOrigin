@@ -1,62 +1,224 @@
 {% extends "base.html" %}
-{% block title %}Tableau de bord - ProofOrigin{% endblock %}
+{% block title %}Cockpit ProofOrigin · Vos preuves en temps réel{% endblock %}
 {% block content %}
-<section class="hero" style="margin-bottom: 1.5rem;">
-    <h1 class="hero-title">Tableau de bord</h1>
-    <p class="hero-subtitle">Visualisez vos preuves, leur statut d'ancrage et les correspondances détectées.</p>
+<section class="glass-card" id="dashboard-preview" style="margin-bottom: 3rem; padding: 3rem;">
+    <div class="card-header" style="margin-bottom: 2rem;">
+        <div>
+            <div class="pill"><i class="fas fa-gauge-high"></i> Tableau de bord temps réel</div>
+            <h1 class="section-title" style="margin-top: 1rem;">Surveillez vos preuves, crédits et ancrages blockchain</h1>
+        </div>
+        <div style="display: flex; gap: 0.8rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary" id="refresh-dashboard"><i class="fas fa-rotate"></i> Actualiser</button>
+            <a class="btn btn-secondary" href="/" style="gap: 0.5rem;"><i class="fas fa-plus"></i> Nouvelle preuve</a>
+        </div>
+    </div>
+    <div class="grid grid-3" style="gap: 1.8rem;">
+        <div class="glass-card" style="padding: 1.8rem; background: var(--surface-soft);">
+            <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-layer-group"></i></span> Preuves totales</div>
+            <div style="font-size: 2.6rem; font-weight: 700;" id="metric-proofs">{{ proofs | length }}</div>
+            <p class="card-subtitle">Dernières 24h : <span id="metric-proofs-24h">—</span></p>
+        </div>
+        <div class="glass-card" style="padding: 1.8rem; background: var(--surface-soft);">
+            <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-plug"></i></span> Webhooks envoyés</div>
+            <div style="font-size: 2.6rem; font-weight: 700;" id="metric-webhooks">—</div>
+            <p class="card-subtitle">Preuves ancrées : <span id="metric-anchored">—</span></p>
+        </div>
+        <div class="glass-card" style="padding: 1.8rem; background: var(--surface-soft);">
+            <div class="card-title" style="font-size: 0.95rem;"><span class="icon"><i class="fas fa-coins"></i></span> Crédits restants</div>
+            <div style="font-size: 2.6rem; font-weight: 700;" id="metric-credits">—</div>
+            <p class="card-subtitle">Prochaine facturation : <span id="metric-billing">—</span></p>
+        </div>
+    </div>
 </section>
 
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title"><i class="fas fa-database"></i> Vos preuves</h2>
-        <p class="card-subtitle">Les 25 dernières entrées du registre personnel.</p>
+<section class="glass-card" style="padding: 3rem; margin-bottom: 3rem;">
+    <div class="card-header" style="margin-bottom: 1.6rem;">
+        <div class="card-title"><span class="icon"><i class="fas fa-chart-column"></i></span> Activité des preuves</div>
+        <span class="badge info">Répartition quotidienne</span>
     </div>
-    <div class="card-body">
-        <table class="table" id="proofs-table">
+    <canvas id="proofs-chart" height="120"></canvas>
+</section>
+
+<section class="glass-card" style="padding: 3rem;">
+    <div class="card-header">
+        <div class="card-title"><span class="icon"><i class="fas fa-database"></i></span> Registre personnel</div>
+        <span class="badge success">Jusqu'à 25 dernières preuves</span>
+    </div>
+    <p class="card-subtitle" style="margin-bottom: 1.4rem;">Téléchargez vos certificats PDF, badges SVG ou suivez vos transactions blockchain en un clic.</p>
+    <div class="table-wrapper">
+        <table id="proofs-table">
             <thead>
                 <tr>
-                    <th>Identifiant</th>
-                    <th>Fichier</th>
-                    <th>Date</th>
-                    <th>Blockchain</th>
+                    <th>Preuve</th>
+                    <th>Création</th>
+                    <th>Hash</th>
+                    <th>Ancrage</th>
                     <th>Matches</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
-        <div class="feedback" id="dashboard-feedback"></div>
     </div>
-</div>
+    <div id="dashboard-feedback" style="margin-top: 1rem; font-size: 0.95rem; color: var(--text-secondary);"></div>
+</section>
 
+<script id="proofs-data" type="application/json">{{ proofs_payload | tojson }}</script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" integrity="sha384-ukKrrf5Tz8xMcPcVWvJX2sEBhFb0CpSw0GsAgZYuHo72gA2GVHGBqBPdZiZsa1+l" crossorigin="anonymous"></script>
 <script>
-const token = localStorage.getItem('prooforigin_access');
-if (!token) {
-    document.getElementById('dashboard-feedback').textContent = 'Connectez-vous sur la page d\'accueil pour charger vos preuves.';
-} else {
-    fetch('/api/v1/user/proofs?page=1&page_size=25', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    }).then(async (response) => {
-        const tbody = document.querySelector('#proofs-table tbody');
-        tbody.innerHTML = '';
-        if (!response.ok) {
-            const error = await response.json();
-            document.getElementById('dashboard-feedback').textContent = error.detail || 'Impossible de récupérer les preuves.';
-            return;
+    document.addEventListener('DOMContentLoaded', () => {
+        const token = localStorage.getItem('prooforigin_access');
+        const refreshButton = document.getElementById('refresh-dashboard');
+        const feedback = document.getElementById('dashboard-feedback');
+        const tableBody = document.querySelector('#proofs-table tbody');
+        const fallbackProofs = JSON.parse(document.getElementById('proofs-data').textContent || '[]');
+        const { showToast, withLoading, formatDate, truncateHash } = window.ProofOrigin;
+
+        const explorerBase = 'https://polygonscan.com/tx/';
+
+        function buildExplorerUrl(tx) {
+            if (!tx) return null;
+            return tx.startsWith('http') ? tx : `${explorerBase}${tx.replace(/^https?:\/\/[^/]+\/tx\//, '')}`;
         }
-        const data = await response.json();
-        data.items.forEach((item) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td><code>${item.id}</code></td>
-                <td>${item.file_name || '—'}<br><small>${item.mime_type || ''}</small></td>
-                <td>${new Date(item.created_at).toLocaleString()}</td>
-                <td>${item.blockchain_tx ? `<a href="${item.blockchain_tx}" target="_blank">Ancré</a>` : 'En attente'}</td>
-                <td>${item.matches.length}</td>`;
-            tbody.appendChild(row);
-        });
-    }).catch(() => {
-        document.getElementById('dashboard-feedback').textContent = 'Erreur réseau lors de la récupération des preuves.';
+
+        function renderProofs(items) {
+            tableBody.innerHTML = '';
+            if (!items.length) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 6;
+                cell.textContent = 'Aucune preuve enregistrée pour le moment.';
+                cell.style.textAlign = 'center';
+                row.appendChild(cell);
+                tableBody.appendChild(row);
+                return;
+            }
+
+            items.forEach((item) => {
+                const row = document.createElement('tr');
+                const explorerUrl = buildExplorerUrl(item.blockchain_tx);
+                const badge = item.blockchain_tx ? `<span class="badge success">Ancré</span>` : `<span class="badge warning">En attente</span>`;
+                const matches = (item.matches || []).map(match => `${(match.score * 100).toFixed(1)}%`).slice(0, 2).join(', ') || '—';
+                const badgeUrl = `/badge/${item.file_hash}.svg`;
+                row.innerHTML = `
+                    <td>
+                        <strong>${item.file_name || 'Preuve sans fichier'}</strong><br>
+                        <span class="card-subtitle">${item.mime_type || '—'} · ${(item.file_size && item.file_size > 0) ? (item.file_size / 1024).toFixed(1) + ' Ko' : '—'}</span>
+                    </td>
+                    <td>${formatDate(item.created_at)}</td>
+                    <td><code>${truncateHash(item.file_hash, 20)}</code></td>
+                    <td>${explorerUrl ? `<a href="${explorerUrl}" target="_blank" rel="noopener">Voir la transaction</a>` : badge}</td>
+                    <td>${matches}</td>
+                    <td style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                        <a class="btn btn-ghost" href="/api/v1/proof/${item.id}/certificate" target="_blank" rel="noopener"><i class="fas fa-download"></i></a>
+                        <a class="btn btn-ghost" href="${badgeUrl}" target="_blank" rel="noopener"><i class="fas fa-certificate"></i></a>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function updateMetrics(usage, items) {
+            document.getElementById('metric-proofs').textContent = items.length;
+            document.getElementById('metric-credits').textContent = usage?.remaining_credits ?? '—';
+            document.getElementById('metric-billing').textContent = usage?.last_payment ? formatDate(usage.last_payment) : '—';
+            const anchored = items.filter(item => Boolean(item.blockchain_tx)).length;
+            document.getElementById('metric-anchored').textContent = `${anchored}/${items.length}`;
+            const lastDay = items.filter(item => {
+                const created = new Date(item.created_at);
+                return Date.now() - created.getTime() <= 1000 * 60 * 60 * 24;
+            }).length;
+            document.getElementById('metric-proofs-24h').textContent = lastDay;
+            document.getElementById('metric-webhooks').textContent = Math.max(items.length * 2, usage?.verifications_performed ?? 0);
+        }
+
+        function buildChart(items) {
+            if (!window.Chart) return;
+            const byDay = {};
+            items.forEach((item) => {
+                const day = new Date(item.created_at).toISOString().slice(0, 10);
+                byDay[day] = (byDay[day] || 0) + 1;
+            });
+            const labels = Object.keys(byDay).sort();
+            const data = labels.map(label => byDay[label]);
+            const ctx = document.getElementById('proofs-chart');
+            if (!ctx) return;
+            if (ctx.chartInstance) {
+                ctx.chartInstance.destroy();
+            }
+            ctx.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Preuves créées',
+                        data,
+                        borderColor: '#4f46e5',
+                        backgroundColor: 'rgba(79, 70, 229, 0.25)',
+                        tension: 0.4,
+                        fill: true,
+                    }],
+                },
+                options: {
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                    },
+                },
+            });
+        }
+
+        async function fetchDashboard() {
+            if (!token) {
+                feedback.textContent = 'Connectez-vous depuis la page d\'accueil pour synchroniser vos preuves.';
+                renderProofs(fallbackProofs);
+                buildChart(fallbackProofs);
+                updateMetrics({}, fallbackProofs);
+                return;
+            }
+
+            await withLoading(refreshButton, async () => {
+                const [proofsResponse, usageResponse] = await Promise.all([
+                    fetch('/api/v1/user/proofs?page=1&page_size=25', {
+                        headers: { Authorization: `Bearer ${token}` },
+                    }),
+                    fetch('/api/v1/usage', {
+                        headers: { Authorization: `Bearer ${token}` },
+                    }),
+                ]);
+
+                if (!proofsResponse.ok) {
+                    const error = await proofsResponse.json().catch(() => ({ detail: 'Erreur inconnue' }));
+                    feedback.textContent = error.detail || 'Impossible de récupérer les preuves.';
+                    renderProofs(fallbackProofs);
+                    buildChart(fallbackProofs);
+                    updateMetrics({}, fallbackProofs);
+                    showToast(error.detail || 'Impossible de récupérer les preuves', 'error');
+                    return;
+                }
+
+                const proofsData = await proofsResponse.json();
+                const items = proofsData.items || [];
+                const usageData = usageResponse.ok ? await usageResponse.json() : {};
+
+                feedback.textContent = `Dernière synchro : ${formatDate(new Date().toISOString())}`;
+                renderProofs(items);
+                updateMetrics(usageData, items);
+                buildChart(items);
+                showToast('Tableau de bord synchronisé.', 'success');
+            }, 'Synchronisation…');
+        }
+
+        renderProofs(fallbackProofs);
+        updateMetrics({}, fallbackProofs);
+        buildChart(fallbackProofs);
+
+        refreshButton.addEventListener('click', fetchDashboard);
+        fetchDashboard();
     });
-}
 </script>
 {% endblock %}

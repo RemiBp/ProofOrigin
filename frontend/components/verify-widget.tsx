@@ -1,0 +1,97 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+
+import { API_BASE_URL } from "../lib/config";
+import { useTranslations } from "./i18n/language-provider";
+
+interface VerifyResult {
+  status: "verified" | "missing";
+  created_at?: string | null;
+  download_url?: string | null;
+  owner?: { id?: string; email?: string | null; display_name?: string | null } | null;
+  blockchain_tx?: string | null;
+}
+
+export function VerifyWidget() {
+  const [hash, setHash] = useState("");
+  const [result, setResult] = useState<VerifyResult | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const t = useTranslations();
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!hash.trim()) {
+      setStatus(t.verify.statusPrompt);
+      return;
+    }
+    setLoading(true);
+    setStatus(t.verify.statusLoading);
+    setResult(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/verify/${encodeURIComponent(hash.trim())}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Vérification impossible (${response.status})`);
+      }
+      const data = await response.json();
+      setResult(data);
+      setStatus(data.status === "verified" ? t.verify.statusVerified : t.verify.statusMissing);
+    } catch (error) {
+      setStatus(t.verify.statusError.replace("{{message}}", (error as Error).message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="glass-card" id="verify">
+      <div className="section-heading">
+        <div>
+          <h2 style={{ margin: 0, fontSize: "1.8rem" }}>{t.verify.heading}</h2>
+          <p style={{ marginTop: "0.25rem", color: "var(--primary)" }}>{t.verify.subheading}</p>
+        </div>
+      </div>
+      <form className="grid" onSubmit={handleSubmit}>
+        <label>
+          <span>{t.verify.hashLabel}</span>
+          <input value={hash} onChange={(event) => setHash(event.target.value)} placeholder={t.verify.hashPlaceholder} required />
+        </label>
+        <button className="btn btn-primary" type="submit" disabled={loading}>
+          {loading ? t.verify.submitting : t.verify.submit}
+        </button>
+      </form>
+      {status && <p>{status}</p>}
+      {result && (
+        <div className="glass-card" style={{ gap: "0.75rem", padding: "1.5rem" }}>
+          <p style={{ margin: 0 }}>
+            {t.verify.resultStatusLabel} {result.status === "verified" ? t.verify.resultVerified : t.verify.resultMissing}
+          </p>
+          {result.created_at && (
+            <p style={{ margin: 0 }}>
+              {t.verify.resultCreatedAt} {new Date(result.created_at).toLocaleString()}
+            </p>
+          )}
+          {result.owner && (
+            <p style={{ margin: 0 }}>
+              {t.verify.resultOwner} {result.owner.display_name ?? result.owner.email ?? result.owner.id}
+            </p>
+          )}
+          {result.blockchain_tx && (
+            <a href={`https://polygonscan.com/tx/${result.blockchain_tx}`} target="_blank" rel="noreferrer">
+              {t.verify.anchorLink}
+            </a>
+          )}
+          {result.download_url && (
+            <a className="btn btn-secondary" href={`${API_BASE_URL}${result.download_url}`} target="_blank" rel="noreferrer">
+              {t.verify.downloadButton}
+            </a>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
