@@ -40,6 +40,25 @@ docker compose up --build
 ```
 Cette commande démarre l'API FastAPI, un worker Celery, PostgreSQL, Redis et MinIO (object storage compatible S3). La bucket `prooforigin` est créée automatiquement pour stocker les artefacts.
 
+### Déploiement sur Render
+
+Le fichier [`render.yaml`](./render.yaml) décrit une architecture complète pour Render :
+
+- **`prooforigin-api`** : service web Docker exposant l'API FastAPI.
+- **`prooforigin-worker`** : worker Celery pour les tâches asynchrones (similarité, ancrage blockchain, webhooks).
+- **`prooforigin-scheduler`** : planificateur Celery Beat pour déclencher les batches d'ancrage.
+- **`prooforigin-redis`** : cache partagé pour la file, le rate limiting et le monitoring.
+- **`prooforigin-db`** : base PostgreSQL managée.
+
+Déploiement type :
+
+1. Importer le dépôt dans Render puis lancer `render blueprint deploy` (ou déployer via l'interface graphique).
+2. Renseigner les secrets (`PROOFORIGIN_PRIVATE_KEY_MASTER_KEY`, credentials S3, clés Stripe/Web3, Sentry...).
+3. Configurer l'object storage (`PROOFORIGIN_STORAGE_BACKEND=s3`) et les variables associées.
+4. Ajuster les plans Render (`starter`/`standard`/`pro`) selon la charge attendue et activer l'auto-deploy.
+
+> ℹ️ Le blueprint active Prometheus sur l'API, alimente Celery/SlowAPI avec Redis et laisse les options sensibles (`sync: false`) à renseigner via le dashboard Render.
+
 ### Variables d'environnement principales
 | Variable | Rôle |
 | --- | --- |
@@ -154,7 +173,7 @@ ProofOrigin/
 python -m py_compile $(git ls-files '*.py')
 
 # Tests unitaires
-pytest
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest
 
 # Lancer l'app en mode développement
 uvicorn prooforigin.app:app --reload
