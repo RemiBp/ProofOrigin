@@ -1,0 +1,176 @@
+services:
+  - type: web
+    name: prooforigin-api
+    env: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uvicorn prooforigin.app:app --host 0.0.0.0 --port 8000
+    autoDeploy: true
+    envVars:
+      - key: PROOFORIGIN_ENVIRONMENT
+        value: production
+      - key: PROOFORIGIN_DATABASE_URL
+        fromDatabase:
+          name: prooforigin-db
+          property: connectionString
+      - key: PROOFORIGIN_PRIVATE_KEY_MASTER_KEY
+        sync: false
+      - key: PROOFORIGIN_REDIS_URL
+        fromService:
+          name: prooforigin-redis
+          property: connectionString
+      - key: PROOFORIGIN_RATE_LIMIT_STORAGE_URL
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_TASK_QUEUE_BACKEND
+        value: celery
+      - key: PROOFORIGIN_CELERY_BROKER_URL
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_CELERY_RESULT_BACKEND
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_STORAGE_BACKEND
+        value: s3
+      - key: PROOFORIGIN_STORAGE_S3_BUCKET
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_ACCESS_KEY
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_SECRET_KEY
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_REGION
+        sync: false
+      - key: PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: PROOFORIGIN_ENABLE_PROMETHEUS
+        value: "true"
+      - key: PROOFORIGIN_SENTRY_DSN
+        sync: false
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
+  - type: web
+    name: prooforigin-frontend
+    env: node
+    plan: starter
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm run start -- -p 3000
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://prooforigin-api.onrender.com
+      - key: NEXT_PUBLIC_APP_ORIGIN
+        value: https://app.prooforigin.com
+  - type: worker
+    name: prooforigin-worker
+    env: docker
+    plan: standard
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A prooforigin.tasks.queue worker --loglevel=INFO
+    envVars:
+      - key: PROOFORIGIN_ENVIRONMENT
+        value: production
+      - key: PROOFORIGIN_DATABASE_URL
+        fromDatabase:
+          name: prooforigin-db
+          property: connectionString
+      - key: PROOFORIGIN_PRIVATE_KEY_MASTER_KEY
+        sync: false
+      - key: PROOFORIGIN_REDIS_URL
+        fromService:
+          name: prooforigin-redis
+          property: connectionString
+      - key: PROOFORIGIN_TASK_QUEUE_BACKEND
+        value: celery
+      - key: PROOFORIGIN_CELERY_BROKER_URL
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_CELERY_RESULT_BACKEND
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_STORAGE_BACKEND
+        value: s3
+      - key: PROOFORIGIN_STORAGE_S3_BUCKET
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_ENDPOINT
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_ACCESS_KEY
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_SECRET_KEY
+        sync: false
+      - key: PROOFORIGIN_STORAGE_S3_REGION
+        sync: false
+      - key: PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: PROOFORIGIN_ENABLE_PROMETHEUS
+        value: "false"
+      - key: PROOFORIGIN_SENTRY_DSN
+        sync: false
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
+  - type: worker
+    name: prooforigin-scheduler
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerCommand: celery -A prooforigin.tasks.queue beat --loglevel=INFO
+    envVars:
+      - key: PROOFORIGIN_ENVIRONMENT
+        value: production
+      - key: PROOFORIGIN_DATABASE_URL
+        fromDatabase:
+          name: prooforigin-db
+          property: connectionString
+      - key: PROOFORIGIN_REDIS_URL
+        fromService:
+          name: prooforigin-redis
+          property: connectionString
+      - key: PROOFORIGIN_TASK_QUEUE_BACKEND
+        value: celery
+      - key: PROOFORIGIN_CELERY_BROKER_URL
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_CELERY_RESULT_BACKEND
+        value: ${PROOFORIGIN_REDIS_URL}
+      - key: PROOFORIGIN_ENABLE_PROMETHEUS
+        value: "false"
+      - key: PROOFORIGIN_SENTRY_DSN
+        sync: false
+      - key: PROOFORIGIN_PRIVATE_KEY_MASTER_KEY
+        sync: false
+      - key: PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: PROOFORIGIN_BLOCKCHAIN_ENABLED
+        value: "true"
+      - key: WEB3_RPC_URL
+        sync: false
+      - key: WEB3_PRIVATE_KEY
+        sync: false
+      - key: CONTRACT_ADDRESS
+        sync: false
+      - key: CONTRACT_ABI
+        sync: false
+      - key: WEB3_CHAIN_ID
+        value: "137"
+  - type: redis
+    name: prooforigin-redis
+    plan: standard
+    maxmemoryPolicy: noeviction
+databases:
+  - name: prooforigin-db
+    plan: standard

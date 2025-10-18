@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Stripe / billing
     stripe_api_key: str | None = None
     stripe_price_id: str | None = None
+    stripe_price_pro: str | None = None
+    stripe_price_business: str | None = None
+    stripe_webhook_secret: str | None = None
     default_credit_pack: int = 100
 
     # Storage
@@ -60,9 +63,12 @@ class Settings(BaseSettings):
     blockchain_private_key: str | None = None
     blockchain_chain_id: int | None = None
     blockchain_enabled: bool = False
+    blockchain_contract_address: str | None = None
+    blockchain_contract_abi: str | None = None
     anchor_batch_size: int = 10
     anchor_retry_limit: int = 3
     anchor_poll_interval_seconds: int = 15
+    timestamp_backend: Literal["blockchain", "opentimestamps"] = "blockchain"
 
     # Task queue
     task_queue_backend: Literal["inline", "celery"] = "inline"
