@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # Stripe / billing
     stripe_api_key: str | None = None
     stripe_price_id: str | None = None
+    stripe_webhook_secret: str | None = None
     default_credit_pack: int = 100
 
     # Storage
@@ -63,6 +64,7 @@ class Settings(BaseSettings):
     anchor_batch_size: int = 10
     anchor_retry_limit: int = 3
     anchor_poll_interval_seconds: int = 15
+    timestamp_backend: Literal["blockchain", "opentimestamps"] = "blockchain"
 
     # Task queue
     task_queue_backend: Literal["inline", "celery"] = "inline"

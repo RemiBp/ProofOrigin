@@ -184,7 +184,7 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
     const payload = new URLSearchParams();
     payload.append('username', form.email.value);
     payload.append('password', form.password.value);
-    const response = await fetch('/api/v1/login', {
+    const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: payload

@@ -93,6 +93,9 @@ class Proof(Base):
     relations: Mapped[list["ProofRelation"]] = relationship(
         back_populates="source_proof", cascade="all,delete", foreign_keys="ProofRelation.source_proof_id"
     )
+    verifications: Mapped[list["Verification"]] = relationship(
+        back_populates="proof", cascade="all,delete"
+    )
 
 
 class ProofFile(Base):
@@ -107,6 +110,20 @@ class ProofFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     proof: Mapped["Proof"] = relationship(back_populates="files")
+
+
+class Verification(Base):
+    __tablename__ = "verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    proof_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("proofs.id"))
+    hash: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    requester_ip: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    proof: Mapped[Optional["Proof"]] = relationship(back_populates="verifications")
 
 
 class SimilarityMatch(Base):
@@ -307,6 +324,7 @@ __all__ = [
     "User",
     "Proof",
     "ProofFile",
+    "Verification",
     "SimilarityMatch",
     "SimilarityIndex",
     "ApiKey",
