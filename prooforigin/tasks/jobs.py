@@ -5,9 +5,6 @@ import uuid
 from typing import Any
 
 from prooforigin.core.logging import get_logger
-from prooforigin.services.blockchain import schedule_anchor
-from prooforigin.services.similarity import SimilarityEngine
-from prooforigin.services.webhooks import process_delivery_queue
 from prooforigin.tasks.queue import register_task
 
 logger = get_logger(__name__)
@@ -15,6 +12,8 @@ logger = get_logger(__name__)
 
 @register_task("prooforigin.anchor_proof")
 def anchor_proof_job(proof_id: str) -> None:
+    from prooforigin.services.blockchain import schedule_anchor
+
     try:
         schedule_anchor(uuid.UUID(proof_id))
     except Exception as exc:  # pragma: no cover - defensive
@@ -25,6 +24,7 @@ def anchor_proof_job(proof_id: str) -> None:
 def reindex_similarity_job(proof_id: str) -> None:
     from prooforigin.core.database import session_scope
     from prooforigin.core import models
+    from prooforigin.services.similarity import SimilarityEngine
 
     with session_scope() as session:
         proof = session.get(models.Proof, uuid.UUID(proof_id))
@@ -38,6 +38,8 @@ def reindex_similarity_job(proof_id: str) -> None:
 
 @register_task("prooforigin.process_webhooks")
 def process_webhooks_job() -> None:
+    from prooforigin.services.webhooks import process_delivery_queue
+
     process_delivery_queue()
 
 

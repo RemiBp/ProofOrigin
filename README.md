@@ -29,19 +29,31 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Lancer le backend FastAPI + initialisation DB
+alembic upgrade head
 python app.py  # ou uvicorn prooforigin.app:app --reload
 ```
 Le serveur écoute sur `http://localhost:8000`. L'API interactive est disponible via Swagger (`/docs`) et Redoc (`/redoc`).
 
+### Stack Docker (dev)
+```bash
+docker compose up --build
+```
+Cette commande démarre l'API FastAPI, un worker Celery, PostgreSQL, Redis et MinIO (object storage compatible S3). La bucket `prooforigin` est créée automatiquement pour stocker les artefacts.
+
 ### Variables d'environnement principales
 | Variable | Rôle |
 | --- | --- |
-| `PROOFORIGIN_DATABASE` | URL SQLAlchemy (SQLite par défaut dans `instance/ledger.db`). |
+| `PROOFORIGIN_DATABASE_URL` | URL SQLAlchemy (SQLite par défaut dans `instance/ledger.db`). |
 | `PROOFORIGIN_PRIVATE_KEY_MASTER_KEY` | Master key 32 bytes utilisée pour chiffrer les clés privées (obligatoire en prod). |
 | `PROOFORIGIN_ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de vie des tokens d'accès. |
 | `PROOFORIGIN_STRIPE_API_KEY` / `PROOFORIGIN_STRIPE_PRICE_ID` | Active le mode facturation Stripe. |
 | `WEB3_RPC_URL` / `WEB3_PRIVATE_KEY` / `PROOFORIGIN_BLOCKCHAIN_ENABLED` | Active l'ancrage réel sur une blockchain compatible EVM. |
 | `PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL` | Modèle SBERT à charger (par défaut `all-MiniLM-L6-v2`). |
+| `PROOFORIGIN_STORAGE_BACKEND` | `local` (par défaut) ou `s3` pour externaliser les fichiers. |
+| `PROOFORIGIN_STORAGE_S3_*` | Endpoint, bucket, clés d'accès/secret et région pour l'object storage. |
+| `PROOFORIGIN_REDIS_URL` / `PROOFORIGIN_RATE_LIMIT_STORAGE_URL` | Backend Redis utilisé pour Celery + rate limiting. |
+| `PROOFORIGIN_TASK_QUEUE_BACKEND` | `inline` ou `celery` selon la présence d'un worker. |
+| `PROOFORIGIN_SENTRY_DSN` | Active la télémétrie Sentry si fourni. |
 
 > ⚠️ En production, configurez absolument `PROOFORIGIN_PRIVATE_KEY_MASTER_KEY`, un SGBD externe (PostgreSQL) et un gestionnaire de secrets (Vault, AWS KMS...).
 
@@ -141,16 +153,19 @@ ProofOrigin/
 # Sanity check : compilation et typage de base
 python -m py_compile $(git ls-files '*.py')
 
+# Tests unitaires
+pytest
+
 # Lancer l'app en mode développement
 uvicorn prooforigin.app:app --reload
 ```
 
 ## 🔒 Bonnes pratiques avant prod
-- Utiliser PostgreSQL + migrations (Alembic) au lieu de SQLite.
+- Utiliser PostgreSQL + migrations (Alembic) au lieu de SQLite (déjà supporté via `alembic`).
 - Brancher un service KMS/Vault pour la master key.
-- Activer un vrai moteur ANN (FAISS/Milvus) et une file de tâches (Celery/RQ) pour l'ancrage et la recherche batch.
+- Basculer le moteur ANN vers FAISS/Milvus/Pinecone et déployer la file Celery en production.
 - Configurer Stripe live + Webhooks pour créditer après paiement confirmé.
-- Ajouter un rate limiting distribué (Redis + `slowapi`) et une observabilité (Prometheus, Grafana, Sentry).
+- Brancher les dashboards Prometheus/Grafana et Sentry sur les endpoints `/metrics` et DSN dédiés.
 
 ## 📄 Licence
 Projet distribué sous licence MIT.

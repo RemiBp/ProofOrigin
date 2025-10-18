@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main, work]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: prooforigin
+          POSTGRES_USER: prooforigin
+          POSTGRES_PASSWORD: prooforigin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prooforigin" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    env:
+      PROOFORIGIN_DATABASE_URL: postgresql+psycopg2://prooforigin:prooforigin@localhost:5432/prooforigin
+      PROOFORIGIN_REDIS_URL: redis://localhost:6379/0
+      PROOFORIGIN_RATE_LIMIT_STORAGE_URL: redis://localhost:6379/1
+      PROOFORIGIN_TASK_QUEUE_BACKEND: inline
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run formatting checks
+        run: python -m compileall prooforigin
+      - name: Run tests
+        run: PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest

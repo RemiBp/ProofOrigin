@@ -55,7 +55,7 @@ def get_ledger_entry(
         user_id=proof.user_id,
         file_hash=proof.file_hash,
         signature=proof.signature,
-        metadata=proof.metadata,
+        metadata=proof.metadata_json,
         created_at=proof.created_at,
         anchored_at=proof.anchored_at,
         blockchain_tx=proof.blockchain_tx,

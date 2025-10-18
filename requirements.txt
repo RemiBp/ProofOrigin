@@ -18,4 +18,13 @@ requests==2.31.0
 jsonschema==4.22.0
 celery==5.4.0
 redis==5.0.1
-faiss-cpu==1.7.4.post2; platform_system != "Windows"
+faiss-cpu==1.7.4; platform_system != "Windows"
+boto3==1.35.28
+slowapi==0.1.9
+prometheus-fastapi-instrumentator==6.1.0
+sentry-sdk==2.14.0
+alembic==1.13.2
+psycopg2-binary==2.9.9
+minio==7.2.7
+pytest==8.3.3
+httpx==0.27.2

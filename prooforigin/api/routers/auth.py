@@ -116,7 +116,7 @@ def refresh_token(payload: schemas.RefreshRequest, db: Session = Depends(get_db)
     )
 
 
-@router.post("/upload-key", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/upload-key", status_code=status.HTTP_202_ACCEPTED)
 def upload_key(
     payload: schemas.UploadKeyRequest,
     password_form: OAuth2PasswordRequestForm = Depends(),
@@ -199,7 +199,7 @@ def rotate_key(
     )
 
 
-@router.post("/verify-email", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/verify-email", status_code=status.HTTP_202_ACCEPTED)
 def verify_email(payload: schemas.VerificationRequest, db: Session = Depends(get_db)) -> None:
     user = (
         db.query(models.User)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import (
     JSON,
@@ -67,7 +67,7 @@ class Proof(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     file_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     signature: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
     file_name: Mapped[str | None]
     mime_type: Mapped[str | None]
     file_size: Mapped[int | None]
@@ -89,7 +89,7 @@ class Proof(Base):
     anchor_batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("anchor_batches.id"), nullable=True, index=True
     )
-    anchor_batch: Mapped["AnchorBatch" | None] = relationship(back_populates="proofs")
+    anchor_batch: Mapped[Optional["AnchorBatch"]] = relationship(back_populates="proofs")
     relations: Mapped[list["ProofRelation"]] = relationship(
         back_populates="source_proof", cascade="all,delete", foreign_keys="ProofRelation.source_proof_id"
     )
@@ -127,7 +127,7 @@ class SimilarityMatch(Base):
     matched_proof: Mapped["Proof"] = relationship(
         foreign_keys=[matched_proof_id], viewonly=True
     )
-    relation: Mapped["ProofRelation" | None] = relationship(back_populates="match", uselist=False)
+    relation: Mapped[Optional["ProofRelation"]] = relationship(back_populates="match", uselist=False)
 
 
 class SimilarityIndex(Base):
@@ -174,7 +174,7 @@ class UsageLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
-    metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user: Mapped["User"] = relationship()

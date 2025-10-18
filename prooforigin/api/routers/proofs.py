@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from io import BytesIO
 from pathlib import Path
 
 from typing import Annotated
@@ -20,6 +21,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Request,
     UploadFile,
     status,
 )
@@ -33,7 +35,9 @@ from prooforigin.core.logging import get_logger
 from prooforigin.core.security import decrypt_private_key, export_public_key, sign_hash, verify_signature
 from prooforigin.core.settings import get_settings
 from prooforigin.core.metadata import validate_metadata
+from prooforigin.core.rate_limiter import get_limiter
 from prooforigin.services.similarity import SimilarityEngine
+from prooforigin.services.storage import get_storage_service
 from prooforigin.services.webhooks import queue_event
 from prooforigin.tasks.queue import get_task_queue
 
@@ -42,6 +46,8 @@ router = APIRouter(prefix="/api/v1", tags=["proofs"])
 settings = get_settings()
 similarity_engine = SimilarityEngine(settings)
 task_queue = get_task_queue()
+storage_service = get_storage_service()
+limiter = get_limiter()
 
 
 def _save_upload_to_temp(upload: UploadFile) -> Path:
@@ -97,10 +103,8 @@ def _build_evidence_pack(
     match: models.SimilarityMatch | None,
     report_payload: dict[str, object],
 ) -> str:
-    evidence_dir = settings.data_dir / "evidence"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    pack_path = evidence_dir / f"report-{uuid.uuid4()}.zip"
-    with zipfile.ZipFile(pack_path, "w") as archive:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr(
             "proof.json",
             json.dumps(
@@ -108,7 +112,7 @@ def _build_evidence_pack(
                     "proof_id": str(proof.id),
                     "file_hash": proof.file_hash,
                     "signature": proof.signature,
-                    "metadata": proof.metadata,
+                    "metadata": proof.metadata_json,
                     "anchored_at": proof.anchored_at.isoformat() if proof.anchored_at else None,
                     "blockchain_tx": proof.blockchain_tx,
                     "anchor_signature": proof.anchor_signature,
@@ -135,11 +139,13 @@ def _build_evidence_pack(
             "report.json",
             json.dumps(report_payload, ensure_ascii=False, indent=2),
         )
-    return str(pack_path)
+    buffer.seek(0)
+    return storage_service.store(buffer, filename=f"report-{uuid.uuid4().hex}.zip")
 
 
 @router.post("/generate_proof", response_model=schemas.ProofResponse)
 async def generate_proof(
+    request: Request,
     file: UploadFile = File(...),
     metadata: str | None = Form(default=None),
     key_password: str = Form(...),
@@ -188,7 +194,7 @@ async def generate_proof(
         user_id=current_user.id,
         file_hash=file_hash,
         signature=signature,
-        metadata=metadata_payload,
+        metadata_json=metadata_payload,
         file_name=file.filename,
         mime_type=file.content_type,
         file_size=len(file_bytes),
@@ -202,18 +208,16 @@ async def generate_proof(
 
     _assign_to_anchor_batch(db, proof)
 
-    storage_dir = settings.data_dir / "storage" / str(proof.id)
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    stored_path = storage_dir / (file.filename or f"proof-{proof.id}")
-    shutil.move(str(temp_path), stored_path)
+    storage_ref = storage_service.store(temp_path.open("rb"), filename=file.filename)
+    temp_path.unlink(missing_ok=True)
 
     db.add(
         models.ProofFile(
             proof_id=proof.id,
-            filename=file.filename or stored_path.name,
+            filename=file.filename or Path(storage_ref).name,
             mime=file.content_type,
             size=len(file_bytes),
-            storage_ref=str(stored_path),
+            storage_ref=storage_ref,
         )
     )
 
@@ -227,20 +231,20 @@ async def generate_proof(
         "timestamp": proof.created_at.isoformat(),
         "metadata": metadata_payload,
     }
-    artifact_path = storage_dir / f"{stored_path.stem}.proof.json"
-    artifact_path.write_text(json.dumps(proof_artifact, ensure_ascii=False, indent=2))
+    artifact_bytes = json.dumps(proof_artifact, ensure_ascii=False, indent=2).encode("utf-8")
+    artifact_ref = storage_service.store(artifact_bytes, filename=f"{proof.id}.proof.json")
 
     db.add(
         models.ProofFile(
             proof_id=proof.id,
-            filename=artifact_path.name,
+            filename=Path(artifact_ref).name,
             mime="application/json",
-            size=artifact_path.stat().st_size,
-            storage_ref=str(artifact_path),
+            size=len(artifact_bytes),
+            storage_ref=artifact_ref,
         )
     )
     current_user.credits = max(0, current_user.credits - 1)
-    db.add(models.UsageLog(user_id=current_user.id, action="generate_proof", metadata={"proof_id": str(proof.id)}))
+    db.add(models.UsageLog(user_id=current_user.id, action="generate_proof", metadata_json={"proof_id": str(proof.id)}))
 
     similarity_engine.persist_embeddings(db, proof, perceptual_vector)
     matches = similarity_engine.update_similarity_matches(db, proof)
@@ -264,7 +268,7 @@ async def generate_proof(
         id=proof.id,
         file_hash=proof.file_hash,
         signature=proof.signature,
-        metadata=proof.metadata,
+        metadata=proof.metadata_json,
         anchored_at=proof.anchored_at,
         blockchain_tx=proof.blockchain_tx,
         created_at=proof.created_at,
@@ -279,6 +283,7 @@ async def generate_proof(
 
 @router.post("/verify_proof", response_model=schemas.VerifyResult)
 def verify_proof(
+    request: Request,
     payload: schemas.VerifyRequest,
     db: Session = Depends(get_db),
 ) -> schemas.VerifyResult:
@@ -304,7 +309,7 @@ def verify_proof(
         models.UsageLog(
             user_id=proof.user_id,
             action="verify_proof",
-            metadata={"proof_id": str(proof.id)},
+            metadata_json={"proof_id": str(proof.id)},
         )
     )
     db.commit()
@@ -331,6 +336,7 @@ def verify_proof(
 
 @router.post("/verify_proof/file", response_model=schemas.VerifyResult)
 async def verify_proof_with_file(
+    request: Request,
     proof_id: uuid.UUID = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -356,7 +362,7 @@ async def verify_proof_with_file(
         models.UsageLog(
             user_id=proof.user_id,
             action="verify_proof_file",
-            metadata={"proof_id": str(proof.id)},
+            metadata_json={"proof_id": str(proof.id)},
         )
     )
     db.commit()
@@ -403,7 +409,7 @@ def list_user_proofs(
             id=proof.id,
             file_hash=proof.file_hash,
             signature=proof.signature,
-            metadata=proof.metadata,
+            metadata=proof.metadata_json,
             anchored_at=proof.anchored_at,
             blockchain_tx=proof.blockchain_tx,
             created_at=proof.created_at,
@@ -448,7 +454,7 @@ def get_proof(
         id=proof.id,
         file_hash=proof.file_hash,
         signature=proof.signature,
-        metadata=proof.metadata,
+        metadata=proof.metadata_json,
         anchored_at=proof.anchored_at,
         blockchain_tx=proof.blockchain_tx,
         created_at=proof.created_at,
@@ -462,6 +468,7 @@ def get_proof(
 
 @router.post("/search-similar")
 async def search_similar(
+    request: Request,
     payload: Annotated[schemas.SimilarityRequest, Body(embed=True)],
     file: UploadFile | None = File(default=None),
     current_user: models.User = Depends(get_current_user),
@@ -480,6 +487,7 @@ async def search_similar(
     if file:
         temp_path = _save_upload_to_temp(file)
         phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
+        temp_path.unlink(missing_ok=True)
         for candidate in similarity_engine.query_vector_store("clip", clip_vector, top_k=payload.top_k * 3):
             try:
                 candidate_ids.add(uuid.UUID(candidate))

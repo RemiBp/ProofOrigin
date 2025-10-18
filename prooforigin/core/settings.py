@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     stripe_price_id: str | None = None
     default_credit_pack: int = 100
 
+    # Storage
+    storage_backend: Literal["local", "s3"] = "local"
+    storage_local_path: Path = Field(
+        default_factory=lambda: Path.cwd() / "instance" / "uploads"
+    )
+    storage_s3_bucket: str | None = None
+    storage_s3_endpoint: str | None = None
+    storage_s3_region: str | None = None
+    storage_s3_access_key: str | None = None
+    storage_s3_secret_key: str | None = None
+
     # Blockchain anchoring
     blockchain_rpc_url: str | None = None
     blockchain_private_key: str | None = None
@@ -69,6 +80,11 @@ class Settings(BaseSettings):
     # Rate limiting / monitoring
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60
+    rate_limit_storage_url: str | None = None
+    redis_url: str | None = None
+    sentry_dsn: str | None = None
+    enable_prometheus: bool = True
+    metrics_namespace: str = "prooforigin"
 
     @property
     def resolved_database_url(self) -> str:
@@ -78,6 +94,20 @@ class Settings(BaseSettings):
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{(self.data_dir / 'ledger.db').as_posix()}"
+
+    @property
+    def resolved_rate_limit_storage(self) -> str:
+        if self.rate_limit_storage_url:
+            return self.rate_limit_storage_url
+        if self.redis_url:
+            return f"redis://{self.redis_url.split('://')[-1]}"
+        return "memory://"
+
+    @property
+    def resolved_storage_path(self) -> Path:
+        path = self.storage_local_path
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     @property
     def resolved_master_key(self) -> bytes:

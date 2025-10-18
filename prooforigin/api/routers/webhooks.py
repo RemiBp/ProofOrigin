@@ -58,7 +58,7 @@ def create_webhook(
     )
 
 
-@router.delete("/webhooks/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/webhooks/{subscription_id}", status_code=status.HTTP_202_ACCEPTED)
 def delete_webhook(
     subscription_id: int,
     current_user: models.User = Depends(get_current_user),

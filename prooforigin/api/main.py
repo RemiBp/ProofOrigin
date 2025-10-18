@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from prooforigin.api.routers import admin, auth, billing, ledger, proofs, webhooks
 from prooforigin.core.database import init_database
 from prooforigin.core.logging import setup_logging
+from prooforigin.core.observability import configure_observability
+from prooforigin.core.rate_limiter import setup_rate_limiting
 from prooforigin.core.settings import get_settings
 from prooforigin.web.router import router as web_router
 from prooforigin import tasks  # noqa: F401 - ensure tasks registered
@@ -25,6 +27,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    setup_rate_limiting(app)
+    configure_observability(app)
 
     app.include_router(auth.router)
     app.include_router(proofs.router)

@@ -35,6 +35,10 @@ def init_database() -> None:
     Base.metadata.create_all(bind=_engine)
 
 
+def get_engine():
+    return _engine
+
+
 @contextmanager
 def session_scope() -> Generator:
     """Provide a transactional scope around a series of operations."""
@@ -49,4 +53,4 @@ def session_scope() -> Generator:
         session.close()
 
 
-__all__ = ["Base", "SessionLocal", "init_database", "session_scope"]
+__all__ = ["Base", "SessionLocal", "init_database", "session_scope", "get_engine"]
