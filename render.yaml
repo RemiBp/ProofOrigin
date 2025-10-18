@@ -45,6 +45,18 @@ services:
         value: "true"
       - key: PROOFORIGIN_SENTRY_DSN
         sync: false
+  - type: web
+    name: prooforigin-frontend
+    env: node
+    plan: starter
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm run start -- -p 3000
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        value: https://prooforigin-api.onrender.com
+      - key: NEXT_PUBLIC_APP_ORIGIN
+        value: https://app.prooforigin.com
   - type: worker
     name: prooforigin-worker
     env: docker

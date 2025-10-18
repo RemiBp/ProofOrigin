@@ -12,6 +12,7 @@ from prooforigin.api import schemas
 from prooforigin.api.dependencies.api_key import get_api_key_record, get_api_key_user
 from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
+from prooforigin.core.plans import get_plan_details
 from prooforigin.core.logging import get_logger
 from prooforigin.services.proofs import ProofContent, ProofRegistrationService
 
@@ -84,6 +85,13 @@ def api_register_proof(
 
     api_key.quota = max(0, api_key.quota - 1)
     db.add(api_key)
+    db.add(
+        models.UsageLog(
+            user_id=current_user.id,
+            action="public_api.proof",
+            metadata_json={"proof_id": str(result.proof.id)},
+        )
+    )
     db.commit()
     db.refresh(api_key)
 
@@ -105,6 +113,13 @@ def api_verify_hash(
         requester_ip=str(requester.id),
     )
     db.add(verification)
+    db.add(
+        models.UsageLog(
+            user_id=requester.id,
+            action="public_api.verify",
+            metadata_json={"hash": file_hash, "proof_id": str(proof.id) if proof else None},
+        )
+    )
     if proof:
         db.add(
             models.UsageLog(
@@ -152,6 +167,14 @@ def api_batch_register(
                     error=str(exc.detail),
                 )
             )
+    db.add(
+        models.UsageLog(
+            user_id=current_user.id,
+            action="public_api.batch",
+            metadata_json={"items": len(payload.items)},
+        )
+    )
+    db.commit()
     return schemas.BatchProofResponsePayload(results=results)
 
 
@@ -181,12 +204,16 @@ def api_usage(
         .order_by(models.AnchorBatch.created_at.asc())
         .first()
     )
+    plan_details = get_plan_details(current_user.subscription_plan)
     return schemas.UsageResponse(
         proofs_generated=proofs_generated,
         verifications_performed=verifications,
         remaining_credits=current_user.credits,
         last_payment=last_payment.created_at if last_payment else None,
         next_anchor_batch=next_batch.created_at if next_batch else None,
+        plan=plan_details.name,
+        rate_limit_per_minute=plan_details.per_minute,
+        monthly_quota=plan_details.monthly_quota,
     )
 
 

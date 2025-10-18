@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     # Stripe / billing
     stripe_api_key: str | None = None
     stripe_price_id: str | None = None
+    stripe_price_pro: str | None = None
+    stripe_price_business: str | None = None
     stripe_webhook_secret: str | None = None
     default_credit_pack: int = 100
 

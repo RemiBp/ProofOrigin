@@ -13,6 +13,7 @@ ProofOrigin fournit une chaîne complète pour prouver l'origine de contenus num
 | ⛓️ **Ancrage blockchain** | Batching Merkle (`anchor_batches`), signature unique via Web3/simulation, mise à jour groupée des preuves (`blockchain_tx`, `anchor_signature`, `anchored_at`). |
 | 🧭 **Ledger & admin** | Endpoint `/ledger/{id}` avec détails complet, exports d'evidence pack (`/report`), API `/admin` pour lister utilisateurs/proofs et suivre les matches suspects. |
 | 🛠️ **Ops & monitoring** | Endpoint `/healthz`, journalisation JSON (`structlog`), scripts CLI, export `.proof`, tableau de bord web minimaliste (inscription → génération → vérification). |
+| 🖥️ **Frontend Next.js** | Landing futuriste, upload connecté à l’API publique, vérification `/verify/:hash`, dashboard usage/Stripe et pages pricing prêtes pour Render. |
 
 ## 🚀 Démarrage rapide
 
@@ -45,6 +46,7 @@ Cette commande démarre l'API FastAPI, un worker Celery, PostgreSQL, Redis et Mi
 Le fichier [`render.yaml`](./render.yaml) décrit une architecture complète pour Render :
 
 - **`prooforigin-api`** : service web Docker exposant l'API FastAPI.
+- **`prooforigin-frontend`** : service Next.js (Node) servant le dashboard public et la landing page immersive.
 - **`prooforigin-worker`** : worker Celery pour les tâches asynchrones (similarité, ancrage blockchain, webhooks).
 - **`prooforigin-scheduler`** : planificateur Celery Beat pour déclencher les batches d'ancrage.
 - **`prooforigin-redis`** : cache partagé pour la file, le rate limiting et le monitoring.
@@ -66,6 +68,7 @@ Déploiement type :
 | `PROOFORIGIN_PRIVATE_KEY_MASTER_KEY` | Master key 32 bytes utilisée pour chiffrer les clés privées (obligatoire en prod). |
 | `PROOFORIGIN_ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de vie des tokens d'accès. |
 | `PROOFORIGIN_STRIPE_API_KEY` / `PROOFORIGIN_STRIPE_PRICE_ID` | Active le mode facturation Stripe. |
+| `PROOFORIGIN_STRIPE_PRICE_PRO` / `PROOFORIGIN_STRIPE_PRICE_BUSINESS` | Identifiants Stripe Checkout pour les plans Pro et Business (fallback simulé si absent). |
 | `WEB3_RPC_URL` / `WEB3_PRIVATE_KEY` / `PROOFORIGIN_BLOCKCHAIN_ENABLED` | Active l'ancrage réel sur une blockchain compatible EVM. |
 | `PROOFORIGIN_SENTENCE_TRANSFORMER_MODEL` | Modèle SBERT à charger (par défaut `all-MiniLM-L6-v2`). |
 | `PROOFORIGIN_STORAGE_BACKEND` | `local` (par défaut) ou `s3` pour externaliser les fichiers. |
@@ -83,6 +86,7 @@ Déploiement type :
 3. **Connexion** – `POST /api/v1/auth/login` (OAuth2 password) → réception `access_token` + `refresh_token`.
 4. **Rotation/gestion de clé** – `POST /api/v1/rotate-key` ou `/api/v1/upload-key` pour remplacer la clé privée (revocation loggée).
 5. **Génération de preuve** – `POST /api/v1/register` (texte ou fichier) ou `POST /api/v1/generate_proof` pour les clients historiques. Retour JSON + artefact `.proof`.
+6. **Vérification** – `GET /verify/{hash}` (page publique + certificat PDF) ou `GET /api/v1/verify/{hash}` / `POST /api/v1/verify_proof` pour une validation cryptographique.
 6. **Vérification** – `GET /api/v1/verify/{hash}` (recherche rapide) ou `POST /api/v1/verify_proof`/`/verify_proof/file` pour une validation cryptographique.
 7. **Listing & détails** – `GET /api/v1/user/proofs` (pagination) & `GET /api/v1/proofs/{id}` ou `/api/v1/ledger/{id}` pour la vue ledger complète.
 8. **Similarité** – `POST /api/v1/search-similar` (texte ou fichier) → top matches & métriques, création d'alertes/relations.
@@ -135,9 +139,10 @@ Le script `scripts/verify_proof.py` permet une validation hors ligne complète (
 - Les colonnes `blockchain_tx`, `anchor_signature`, `anchored_at`, `anchor_batch_id` sont alimentées et consultables via `/ledger/{id}` ou `/dashboard`.
 
 ## 🖥️ UI & UX
-- Accueil (`/`) : inscription, connexion, génération de preuves et vérification rapide (JS vanilla + fetch).
-- Tableau de bord (`/dashboard`) : tableau des 25 dernières preuves (requires token stocké en localStorage).
-- Les appels front consomment l'API officielle, garantissant la parité web/mobile.
+- Frontend **Next.js 14** (`frontend/`) avec design glassmorphism inspiré Revolut.
+- Page d’accueil : upload connecté à `POST /api/v1/proof`, vérification `GET /verify/:hash`, CTA pricing.
+- Dashboard : suivi des quotas via `GET /api/v1/usage` (X-API-Key) et génération de sessions Stripe `POST /api/v1/buy-credits`.
+- Pages dédiées `/pricing` et `/verify/:hash` pour un accès public sans connaissances techniques.
 
 ## 🧰 Scripts & outils
 - `scripts/verify_proof.py` : vérification hors ligne d'un fichier + artefact `.proof` (Ed25519).
@@ -162,6 +167,7 @@ ProofOrigin/
 │   ├── templates/                 # Interface web (Jinja2)
 │   └── web/router.py              # Routes web
 ├── scripts/                       # CLI et outils
+├── frontend/                      # Frontend Next.js (landing, dashboard, pricing)
 ├── sdks/                          # SDKs clients (inchangés)
 ├── instance/                      # DB, artefacts, stockages
 └── requirements.txt

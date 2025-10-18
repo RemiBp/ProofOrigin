@@ -46,6 +46,7 @@ class User(Base):
     verification_sent_at: Mapped[datetime | None]
     last_login_at: Mapped[datetime | None]
     credits: Mapped[int] = mapped_column(Integer, default=0)
+    subscription_plan: Mapped[str] = mapped_column(String(32), default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

@@ -63,6 +63,7 @@ def register_user(payload: schemas.RegisterRequest, db: Session = Depends(get_db
         is_verified=user.is_verified,
         is_admin=user.is_admin,
         created_at=user.created_at,
+        subscription_plan=user.subscription_plan,
     )
 
 
@@ -196,6 +197,7 @@ def rotate_key(
         is_verified=current_user.is_verified,
         is_admin=current_user.is_admin,
         created_at=current_user.created_at,
+        subscription_plan=current_user.subscription_plan,
     )
 
 

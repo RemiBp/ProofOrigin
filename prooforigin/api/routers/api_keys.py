@@ -10,6 +10,7 @@ from prooforigin.api import schemas
 from prooforigin.api.dependencies.auth import get_current_user
 from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
+from prooforigin.core.plans import get_plan_details
 
 router = APIRouter(prefix="/api/v1/api-keys", tags=["api-keys"])
 
@@ -32,6 +33,7 @@ def list_api_keys(
             quota=key.quota,
             created_at=key.created_at,
             last_used_at=key.last_used_at,
+            plan=current_user.subscription_plan,
         )
         for key in keys
     ]
@@ -51,6 +53,12 @@ def create_api_key(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="API key limit reached")
 
     key_value = secrets.token_hex(32)
+    plan_limits = get_plan_details(current_user.subscription_plan)
+    api_key = models.ApiKey(
+        user_id=current_user.id,
+        key=key_value,
+        quota=plan_limits.monthly_quota,
+    )
     api_key = models.ApiKey(user_id=current_user.id, key=key_value, quota=current_user.credits)
     db.add(api_key)
     db.commit()
@@ -62,6 +70,7 @@ def create_api_key(
         quota=api_key.quota,
         created_at=api_key.created_at,
         last_used_at=api_key.last_used_at,
+        plan=current_user.subscription_plan,
     )
 
 

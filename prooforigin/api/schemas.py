@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,6 +36,7 @@ class UserProfile(BaseModel):
     is_verified: bool
     is_admin: bool
     created_at: datetime
+    subscription_plan: str
 
 
 class ProofMetadata(BaseModel):
@@ -94,6 +95,17 @@ class HashVerificationResponse(BaseModel):
     blockchain_tx: str | None = None
 
 
+class PublicProofStatus(BaseModel):
+    hash: str
+    status: Literal["verified", "missing"]
+    created_at: datetime | None
+    owner: dict[str, Any] | None
+    download_url: str | None
+    blockchain_tx: str | None
+    anchored: bool
+    proof_id: uuid.UUID | None
+
+
 class SimilarityRequest(BaseModel):
     text: str | None = None
     top_k: int = 5
@@ -105,6 +117,9 @@ class UsageResponse(BaseModel):
     remaining_credits: int
     last_payment: datetime | None
     next_anchor_batch: datetime | None = None
+    plan: str
+    rate_limit_per_minute: int
+    monthly_quota: int
 
 
 class ReportRequest(BaseModel):
@@ -137,6 +152,7 @@ class ApiKeyResponse(BaseModel):
     quota: int
     created_at: datetime
     last_used_at: datetime | None = None
+    plan: str
 
 
 class ProofSubmission(BaseModel):
@@ -184,6 +200,11 @@ class AIProofRequest(BaseModel):
 class StripeCheckoutResponse(BaseModel):
     checkout_url: str
     credits: int
+    plan: str
+
+
+class StripeCheckoutRequest(BaseModel):
+    plan: Literal["free", "pro", "business"] = "pro"
 
 
 class UploadKeyRequest(BaseModel):
@@ -262,6 +283,7 @@ __all__ = [
     "VerifyRequest",
     "VerifyResult",
     "HashVerificationResponse",
+    "PublicProofStatus",
     "SimilarityRequest",
     "UsageResponse",
     "ReportRequest",
@@ -285,4 +307,5 @@ __all__ = [
     "BatchProofResult",
     "BatchProofResponsePayload",
     "AIProofRequest",
+    "StripeCheckoutRequest",
 ]

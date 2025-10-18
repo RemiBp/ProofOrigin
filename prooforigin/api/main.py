@@ -13,6 +13,7 @@ from prooforigin.api.routers import (
     ledger,
     proofs,
     public_api,
+    public_verify,
     webhooks,
     ai,
 )
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(proofs.router)
     app.include_router(public_api.router)
+    app.include_router(public_verify.router)
     app.include_router(ai.router)
     app.include_router(billing.router)
     app.include_router(ledger.router)
