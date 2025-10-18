@@ -5,7 +5,6 @@ from datetime import datetime
 
 import hashlib
 import json
-import shutil
 import tempfile
 import uuid
 import zipfile
@@ -25,6 +24,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from prooforigin.api import schemas
@@ -32,10 +32,15 @@ from prooforigin.api.dependencies.auth import get_current_user
 from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
 from prooforigin.core.logging import get_logger
-from prooforigin.core.security import decrypt_private_key, export_public_key, sign_hash, verify_signature
+from prooforigin.core.security import verify_signature
 from prooforigin.core.settings import get_settings
-from prooforigin.core.metadata import validate_metadata
 from prooforigin.core.rate_limiter import get_limiter
+from prooforigin.services.certificates import build_certificate
+from prooforigin.services.proofs import (
+    ProofContent,
+    ProofCreationResult,
+    ProofRegistrationService,
+)
 from prooforigin.services.similarity import SimilarityEngine
 from prooforigin.services.storage import get_storage_service
 from prooforigin.services.webhooks import queue_event
@@ -45,31 +50,10 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["proofs"])
 settings = get_settings()
 similarity_engine = SimilarityEngine(settings)
+registration_service = ProofRegistrationService(settings)
 task_queue = get_task_queue()
 storage_service = get_storage_service()
 limiter = get_limiter()
-
-
-def _save_upload_to_temp(upload: UploadFile) -> Path:
-    tmp_dir = settings.data_dir / "tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(delete=False, dir=tmp_dir) as tmp:
-        shutil.copyfileobj(upload.file, tmp)
-        temp_path = Path(tmp.name)
-    upload.file.seek(0)
-    return temp_path
-
-
-def _parse_metadata(metadata_raw: str | None) -> dict:
-    if not metadata_raw:
-        return {}
-    try:
-        payload = json.loads(metadata_raw)
-        return validate_metadata(payload)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid metadata JSON") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _user_can_spend(user: models.User) -> None:
@@ -77,25 +61,22 @@ def _user_can_spend(user: models.User) -> None:
         raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
 
 
-def _schedule_anchor_task(proof_id: uuid.UUID) -> None:
-    if not settings.blockchain_enabled:
-        return
-    task_queue.enqueue("prooforigin.anchor_proof", str(proof_id))
+def _write_temp_file(data: bytes) -> Path:
+    tmp_dir = settings.data_dir / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(delete=False, dir=tmp_dir) as tmp:
+        tmp.write(data)
+        path = Path(tmp.name)
+    return path
 
 
-def _assign_to_anchor_batch(db: Session, proof: models.Proof) -> None:
-    batch = (
-        db.query(models.AnchorBatch)
-        .filter(models.AnchorBatch.status == "pending")
-        .order_by(models.AnchorBatch.created_at.asc())
-        .first()
+def _to_proof_response(result: ProofCreationResult) -> schemas.ProofResponse:
+    payload = registration_service.build_proof_response(
+        result.proof,
+        result.matches,
+        result.artifact,
     )
-    if batch is None or len(batch.proofs) >= settings.anchor_batch_size:
-        batch = models.AnchorBatch(merkle_root=uuid.uuid4().hex)
-        db.add(batch)
-        db.flush()
-
-    proof.anchor_batch_id = batch.id
+    return schemas.ProofResponse(**payload)
 
 
 def _build_evidence_pack(
@@ -153,131 +134,121 @@ async def generate_proof(
     db: Session = Depends(get_db),
 ) -> schemas.ProofResponse:
     _user_can_spend(current_user)
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty upload")
 
-    temp_path = _save_upload_to_temp(file)
-    file_bytes = temp_path.read_bytes()
-    file_hash = hashlib.sha256(file_bytes).hexdigest()
-
-    if db.query(models.Proof).filter(models.Proof.file_hash == file_hash).first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Proof already exists")
-
+    filename = file.filename or f"upload-{uuid.uuid4().hex}"
+    content = ProofContent(
+        data=file_bytes,
+        filename=filename,
+        mime_type=file.content_type,
+        is_binary=True,
+    )
     try:
-        private_key = decrypt_private_key(
-            current_user.encrypted_private_key,
-            current_user.private_key_nonce,
-            current_user.private_key_salt,
+        result = registration_service.register_content(
+            db,
+            current_user,
+            content,
+            metadata,
             key_password,
         )
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unable to decrypt private key") from exc
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = status.HTTP_409_CONFLICT if "exists" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=detail) from exc
 
-    signature = sign_hash(file_hash, private_key)
-    metadata_payload = _parse_metadata(metadata)
-    text_content = " ".join(
-        filter(
-            None,
-            [
-                metadata_payload.get("title"),
-                metadata_payload.get("description"),
-                " ".join(metadata_payload.get("tags", [])) if metadata_payload.get("tags") else None,
-            ],
+    return _to_proof_response(result)
+
+
+@router.post("/register", response_model=schemas.ProofResponse)
+async def register_creation(
+    request: Request,
+    file: UploadFile | None = File(default=None),
+    text: str | None = Form(default=None),
+    metadata: str | None = Form(default=None),
+    key_password: str = Form(...),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProofResponse:
+    _user_can_spend(current_user)
+    if file and text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide either a file or text payload")
+    if not file and not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing proof payload")
+
+    text_payload: str | None = text
+    if file:
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty upload")
+        filename = file.filename or f"upload-{uuid.uuid4().hex}"
+        content = ProofContent(
+            data=file_bytes,
+            filename=filename,
+            mime_type=file.content_type,
+            is_binary=True,
         )
-    )
-
-    phash = dhash = None
-    perceptual_vector = None
-    clip_vector = None
-    text_embedding = similarity_engine.compute_text_embedding(text_content)
-    phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
-
-    proof = models.Proof(
-        user_id=current_user.id,
-        file_hash=file_hash,
-        signature=signature,
-        metadata_json=metadata_payload,
-        file_name=file.filename,
-        mime_type=file.content_type,
-        file_size=len(file_bytes),
-        phash=phash,
-        dhash=dhash,
-        image_embedding=clip_vector,
-        text_embedding=text_embedding,
-    )
-    db.add(proof)
-    db.flush()
-
-    _assign_to_anchor_batch(db, proof)
-
-    storage_ref = storage_service.store(temp_path.open("rb"), filename=file.filename)
-    temp_path.unlink(missing_ok=True)
-
-    db.add(
-        models.ProofFile(
-            proof_id=proof.id,
-            filename=file.filename or Path(storage_ref).name,
-            mime=file.content_type,
-            size=len(file_bytes),
-            storage_ref=storage_ref,
+    else:
+        assert text is not None
+        text_bytes = text.encode("utf-8")
+        filename = f"text-{uuid.uuid4().hex}.txt"
+        content = ProofContent(
+            data=text_bytes,
+            filename=filename,
+            mime_type="text/plain",
+            is_binary=False,
         )
-    )
 
-    public_key_export = export_public_key(current_user.public_key)
-    proof_artifact = {
-        "prooforigin_protocol": "POP-1.0",
-        "proof_id": str(proof.id),
-        "hash": {"algorithm": "SHA-256", "value": file_hash},
-        "signature": {"algorithm": "Ed25519", "value": signature},
-        "public_key": public_key_export,
-        "timestamp": proof.created_at.isoformat(),
-        "metadata": metadata_payload,
-    }
-    artifact_bytes = json.dumps(proof_artifact, ensure_ascii=False, indent=2).encode("utf-8")
-    artifact_ref = storage_service.store(artifact_bytes, filename=f"{proof.id}.proof.json")
-
-    db.add(
-        models.ProofFile(
-            proof_id=proof.id,
-            filename=Path(artifact_ref).name,
-            mime="application/json",
-            size=len(artifact_bytes),
-            storage_ref=artifact_ref,
+    try:
+        result = registration_service.register_content(
+            db,
+            current_user,
+            content,
+            metadata,
+            key_password,
+            text_payload=text_payload,
         )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = status.HTTP_409_CONFLICT if "exists" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    return _to_proof_response(result)
+
+
+@router.get("/verify/{file_hash}", response_model=schemas.HashVerificationResponse)
+def verify_by_hash(
+    file_hash: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> schemas.HashVerificationResponse:
+    proof, owner = registration_service.verify_hash(db, file_hash)
+    verification = models.Verification(
+        proof_id=proof.id if proof else None,
+        hash=file_hash,
+        success=proof is not None,
+        requester_ip=request.client.host if request.client else None,
     )
-    current_user.credits = max(0, current_user.credits - 1)
-    db.add(models.UsageLog(user_id=current_user.id, action="generate_proof", metadata_json={"proof_id": str(proof.id)}))
-
-    similarity_engine.persist_embeddings(db, proof, perceptual_vector)
-    matches = similarity_engine.update_similarity_matches(db, proof)
-
+    db.add(verification)
+    if proof:
+        db.add(
+            models.UsageLog(
+                user_id=proof.user_id,
+                action="verify_hash",
+                metadata_json={"proof_id": str(proof.id)},
+            )
+        )
     db.commit()
-    db.refresh(proof)
 
-    _schedule_anchor_task(proof.id)
-    queue_event(
-        current_user.id,
-        "proof.generated",
-        {
-            "proof_id": str(proof.id),
-            "file_hash": proof.file_hash,
-            "created_at": proof.created_at.isoformat(),
-        },
-    )
-    task_queue.enqueue("prooforigin.reindex_similarity", str(proof.id))
-
-    return schemas.ProofResponse(
-        id=proof.id,
-        file_hash=proof.file_hash,
-        signature=proof.signature,
-        metadata=proof.metadata_json,
-        anchored_at=proof.anchored_at,
-        blockchain_tx=proof.blockchain_tx,
-        created_at=proof.created_at,
-        file_name=proof.file_name,
-        mime_type=proof.mime_type,
-        file_size=proof.file_size,
-        matches=matches,
-        proof_artifact=proof_artifact,
-        anchor_batch_id=proof.anchor_batch_id,
+    return schemas.HashVerificationResponse(
+        exists=proof is not None,
+        proof_id=proof.id if proof else None,
+        created_at=proof.created_at if proof else None,
+        owner_id=owner.id if owner else None,
+        owner_email=owner.email if owner else None,
+        anchored=bool(proof.blockchain_tx) if proof else False,
+        blockchain_tx=proof.blockchain_tx if proof else None,
     )
 
 
@@ -310,6 +281,14 @@ def verify_proof(
             user_id=proof.user_id,
             action="verify_proof",
             metadata_json={"proof_id": str(proof.id)},
+        )
+    )
+    db.add(
+        models.Verification(
+            proof_id=proof.id,
+            hash=proof.file_hash,
+            success=valid_signature,
+            requester_ip=request.client.host if request.client else None,
         )
     )
     db.commit()
@@ -345,8 +324,8 @@ async def verify_proof_with_file(
     if not proof:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proof not found")
 
-    temp_path = _save_upload_to_temp(file)
-    file_hash = hashlib.sha256(temp_path.read_bytes()).hexdigest()
+    file_bytes = await file.read()
+    file_hash = hashlib.sha256(file_bytes).hexdigest()
 
     if file_hash != proof.file_hash:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Hash mismatch")
@@ -363,6 +342,14 @@ async def verify_proof_with_file(
             user_id=proof.user_id,
             action="verify_proof_file",
             metadata_json={"proof_id": str(proof.id)},
+        )
+    )
+    db.add(
+        models.Verification(
+            proof_id=proof.id,
+            hash=proof.file_hash,
+            success=valid_signature,
+            requester_ip=request.client.host if request.client else None,
         )
     )
     db.commit()
@@ -466,6 +453,38 @@ def get_proof(
     )
 
 
+@router.get("/proof/{proof_id}", response_model=schemas.ProofResponse)
+def get_proof_details(
+    proof_id: uuid.UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> schemas.ProofResponse:
+    return get_proof(proof_id, current_user, db)
+
+
+@router.get("/proof/{proof_id}/certificate")
+def download_certificate(
+    proof_id: uuid.UUID,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    proof = db.get(models.Proof, proof_id)
+    if not proof or proof.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proof not found")
+
+    pdf_bytes = build_certificate(proof, current_user)
+    queue_event(
+        current_user.id,
+        "proof.certificate.generated",
+        {"proof_id": str(proof.id), "generated_at": datetime.utcnow().isoformat()},
+    )
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="proof-{proof.id}.pdf"'},
+    )
+
+
 @router.post("/search-similar")
 async def search_similar(
     request: Request,
@@ -485,7 +504,8 @@ async def search_similar(
     candidate_ids: set[uuid.UUID] = set()
 
     if file:
-        temp_path = _save_upload_to_temp(file)
+        file_bytes = await file.read()
+        temp_path = _write_temp_file(file_bytes)
         phash, dhash, perceptual_vector, clip_vector = similarity_engine.compute_image_hashes(temp_path)
         temp_path.unlink(missing_ok=True)
         for candidate in similarity_engine.query_vector_store("clip", clip_vector, top_k=payload.top_k * 3):

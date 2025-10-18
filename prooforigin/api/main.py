@@ -4,7 +4,19 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from prooforigin.api.routers import admin, auth, billing, ledger, proofs, webhooks
+from prooforigin.api.routers import (
+    admin,
+    api_keys,
+    auth,
+    badges,
+    billing,
+    ledger,
+    proofs,
+    public_api,
+    public_verify,
+    webhooks,
+    ai,
+)
 from prooforigin.core.database import init_database
 from prooforigin.core.logging import setup_logging
 from prooforigin.core.observability import configure_observability
@@ -33,10 +45,15 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(proofs.router)
+    app.include_router(public_api.router)
+    app.include_router(public_verify.router)
+    app.include_router(ai.router)
     app.include_router(billing.router)
     app.include_router(ledger.router)
     app.include_router(admin.router)
     app.include_router(webhooks.router)
+    app.include_router(api_keys.router)
+    app.include_router(badges.router)
     app.include_router(web_router)
 
     @app.get("/healthz", tags=["monitoring"])

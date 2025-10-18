@@ -41,6 +41,21 @@ def _init_celery() -> None:
             task_acks_late=True,
             worker_max_tasks_per_child=1000,
         )
+        try:
+            from celery.schedules import crontab
+
+            celery_app.conf.beat_schedule = {
+                "verify-storage-weekly": {
+                    "task": "prooforigin.verify_storage",
+                    "schedule": crontab(minute=0, hour=3, day_of_week="sun"),
+                },
+                "process-webhooks": {
+                    "task": "prooforigin.process_webhooks",
+                    "schedule": crontab(minute="*/10"),
+                },
+            }
+        except Exception:  # pragma: no cover - optional dependency missing
+            logger.warning("celery_schedule_disabled", reason="schedules_unavailable")
         logger.info("celery_initialised", broker=settings.celery_broker_url)
 
 
