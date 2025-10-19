@@ -144,5 +144,63 @@ class TransparencyLedger:
             ],
         }
 
+    def list_entries(
+        self,
+        db: Session,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        profile: str | None = None,
+        model: str | None = None,
+        asset_hash: str | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> tuple[list[models.TransparencyLogEntry], int]:
+        query = db.query(models.TransparencyLogEntry).outerjoin(models.Proof)
+        if profile:
+            query = query.filter(models.Proof.metadata_json.isnot(None))
+            query = query.filter(models.Proof.metadata_json["profile"].astext == profile)
+        if model:
+            query = query.filter(models.Proof.metadata_json.isnot(None))
+            query = query.filter(models.Proof.metadata_json["model"].astext == model)
+        if asset_hash:
+            query = query.filter(models.TransparencyLogEntry.file_hash == asset_hash)
+        if date_from:
+            query = query.filter(models.TransparencyLogEntry.created_at >= date_from)
+        if date_to:
+            query = query.filter(models.TransparencyLogEntry.created_at <= date_to)
+        total = query.count()
+        entries = (
+            query.order_by(models.TransparencyLogEntry.sequence.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return entries, total
+
+    def serialize_entry(self, entry: models.TransparencyLogEntry) -> dict[str, object]:
+        receipts = [
+            {
+                "chain": receipt.chain,
+                "transaction_hash": receipt.transaction_hash,
+                "anchored_at": receipt.anchored_at.isoformat() if receipt.anchored_at else None,
+                "payload": receipt.receipt_payload,
+            }
+            for receipt in entry.receipts
+        ]
+        return {
+            "id": str(entry.id),
+            "proof_id": str(entry.proof_id) if entry.proof_id else None,
+            "profile": entry.proof.metadata_json.get("profile") if entry.proof else None,
+            "asset_hash": entry.file_hash,
+            "anchored_at": entry.anchored_at.isoformat() if entry.anchored_at else None,
+            "created_at": entry.created_at.isoformat(),
+            "receipts": receipts,
+            "chain": receipts[0]["chain"] if receipts else None,
+            "model": entry.proof.metadata_json.get("model") if entry.proof else None,
+            "metadata": entry.proof.metadata_json if entry.proof else None,
+            "sequence": entry.sequence,
+        }
+
 
 __all__ = ["TransparencyLedger", "LedgerReceipt"]

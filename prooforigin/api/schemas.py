@@ -198,6 +198,41 @@ class BatchProofResponsePayload(BaseModel):
     results: list[BatchProofResult]
 
 
+class TransparencyLogFilter(BaseModel):
+    profile: str | None = None
+    model: str | None = None
+    asset_hash: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class TransparencyLogEntry(BaseModel):
+    id: uuid.UUID
+    proof_id: uuid.UUID | None
+    profile: str | None = None
+    asset_hash: str
+    anchored_at: datetime | None
+    created_at: datetime
+    receipts: list[dict[str, Any]]
+    chain: str | None = None
+    model: str | None = None
+    metadata: dict[str, Any] | None = None
+    sequence: int
+
+
+class TransparencyLogResponse(BaseModel):
+    entries: list[TransparencyLogEntry]
+    total: int
+    page: int
+    page_size: int
+
+
+class RiskThresholds(BaseModel):
+    phash: float
+    clip: float
+    overall: float
+
+
 class AIProofRequest(BaseModel):
     model_name: str
     prompt: str | None = None

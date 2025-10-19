@@ -101,19 +101,23 @@ Toutes les routes nécessitent HTTPS + `Authorization: Bearer` sauf inscription/
 Le fichier JSON exporté (et enregistré à côté du fichier original) suit le schéma :
 ```json
 {
-  "prooforigin_protocol": "POP-1.0",
+  "schema": "pop://artifact/1.1",
+  "schema_version": "pop://artifact/1.1",
   "proof_id": "UUID",
   "hash": {"algorithm": "SHA-256", "value": "..."},
+  "normalized_hash": {"algorithm": "SHA-256", "value": "..."},
   "signature": {"algorithm": "Ed25519", "value": "base64"},
-  "public_key": {
-    "public_key_pem": "-----BEGIN PUBLIC KEY...",
-    "public_key_raw": "base64"
-  },
+  "public_key": {"format": "PKCS8", "value": "-----BEGIN PUBLIC KEY..."},
   "timestamp": "2024-05-07T12:34:56.789Z",
-  "metadata": {...}
+  "metadata": {"title": "…"},
+  "transparency_log": {"namespace": "primary", "sequence": 42},
+  "receipts": [
+    {"chain": "polygon", "transaction_hash": "0x…", "payload": {...}, "anchored_at": "2024-05-07T12:35:06Z"}
+  ],
+  "c2pa_manifest_ref": "s3://bucket/proofs/uuid.c2pa"
 }
 ```
-Le script `scripts/verify_proof.py` permet une validation hors ligne complète (hash + signature Ed25519).
+Les vérifications hors-ligne peuvent être effectuées via `scripts/verify_proof.py` **ou** le widget web embarqué (`frontend/public/js/zero-trust-verifier.js`) qui fonctionne même sans réseau : il re-hash le fichier, compare la Merkle leaf et exploite le `.proof` puis bascule sur l’API uniquement en fallback.
 
 ## 🧠 Similarité & Indexation
 - **Images** : pHash/dHash via `imagehash` + embeddings CLIP (`sentence-transformers/clip-ViT-B-32`) pour une recherche perceptuelle et sémantique.

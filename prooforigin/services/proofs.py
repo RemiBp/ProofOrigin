@@ -28,6 +28,7 @@ from prooforigin.services.onchain import (
     OpenTimestampsAnchor,
     PolygonAnchor,
 )
+from prooforigin.services.observability import trace_stage
 from prooforigin.services.pipeline import NormalizationPipeline
 from prooforigin.services.similarity import SimilarityEngine
 from prooforigin.services.storage import get_storage_service
@@ -116,17 +117,25 @@ class ProofRegistrationService:
         metadata_payload: dict[str, Any],
         signature: str,
         db: Session,
+        transparency_log: dict[str, Any] | None = None,
+        receipts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        artifact = {
-            "prooforigin_protocol": "POP-1.0",
-            "proof_id": str(proof.id),
-            "hash": {"algorithm": "SHA-256", "value": proof.file_hash},
-            "normalized_hash": {"algorithm": "SHA-256", "value": proof.normalized_hash},
-            "signature": {"algorithm": "Ed25519", "value": signature},
-            "public_key": export_public_key(user.public_key),
-            "timestamp": proof.created_at.isoformat(),
-            "metadata": metadata_payload,
-        }
+        from prooforigin.core.proof_schema import build_artifact
+
+        public_key_info = export_public_key(user.public_key)
+        artifact_obj = build_artifact(
+            proof_id=str(proof.id),
+            hash_hex=proof.file_hash,
+            normalized_hash_hex=proof.normalized_hash,
+            signature=signature,
+            public_key_pem=public_key_info["public_key_pem"],
+            metadata=metadata_payload,
+            timestamp=proof.created_at,
+            manifest_ref=proof.c2pa_manifest_ref,
+            transparency_log=transparency_log,
+            receipts=receipts,
+        )
+        artifact = artifact_obj.to_json()
         artifact_bytes = json.dumps(artifact, ensure_ascii=False, indent=2).encode("utf-8")
         artifact_ref = self.storage_service.store(artifact_bytes, filename=f"{proof.id}.proof.json")
         db.add(
@@ -230,9 +239,15 @@ class ProofRegistrationService:
             score += 30
         if not proof.blockchain_tx:
             score += 25
-        high_match = any(float(match.get("score", 0.0)) >= 0.9 for match in matches)
-        if high_match:
-            score += 30
+        for match in matches:
+            score += int(float(match.get("score", 0.0)) * 10)
+            metrics = match.get("metrics", {})
+            phash = float(metrics.get("phash", 0.0) or 0.0)
+            clip = float(metrics.get("clip", 0.0) or 0.0)
+            if phash >= 0.85:
+                score += 10
+            if clip >= 0.85:
+                score += 10
         return min(score, 100)
 
     def _compute_embeddings(
@@ -279,7 +294,8 @@ class ProofRegistrationService:
         text_payload: str | None = None,
     ) -> ProofCreationResult:
         metadata_payload = self._parse_metadata(metadata_raw)
-        normalized_asset = self.pipeline.normalize(content)
+        with trace_stage("proof.register", "normalize", user_id=str(user.id)):
+            normalized_asset = self.pipeline.normalize(content)
         file_hash = normalized_asset.normalized_hash
 
         if db.query(models.Proof).filter(models.Proof.file_hash == file_hash).first():
@@ -295,7 +311,8 @@ class ProofRegistrationService:
         except Exception as exc:  # pragma: no cover - defensive
             raise ValueError("Unable to decrypt private key") from exc
 
-        signature = sign_hash(file_hash, private_key)
+        with trace_stage("proof.register", "sign", user_id=str(user.id)):
+            signature = sign_hash(file_hash, private_key)
 
         tmp_file: Path | None = None
         normalized_tmp: Path | None
@@ -313,11 +330,12 @@ class ProofRegistrationService:
             normalized_handle.close()
         normalized_tmp = Path(normalized_handle.name)
 
-        clip_vector, text_embedding = self._compute_embeddings(
-            normalized_tmp,
-            metadata_payload,
-            text_payload,
-        )
+        with trace_stage("proof.register", "embeddings", user_id=str(user.id)):
+            clip_vector, text_embedding = self._compute_embeddings(
+                normalized_tmp,
+                metadata_payload,
+                text_payload,
+            )
 
         phash = normalized_asset.phash
         dhash = normalized_asset.dhash
@@ -348,25 +366,26 @@ class ProofRegistrationService:
         db.flush()
 
         if self.onchain_anchor.is_configured:
-            try:
-                anchor_result = self.onchain_anchor.anchor_hash(file_hash)
-            except OnChainConfigurationError as exc:
-                logger.warning("onchain_configuration_error", error=str(exc))
-            except Exception as exc:  # pragma: no cover - external dependency
-                logger.error("onchain_anchor_failed", error=str(exc))
-            else:
-                proof.blockchain_tx = anchor_result.transaction_hash
-                proof.anchor_signature = anchor_result.anchor_signature
-                proof.anchored_at = anchor_result.anchored_at
-                queue_event(
-                    user.id,
-                    "proof.anchored",
-                    {
-                        "proof_id": str(proof.id),
-                        "transaction_hash": anchor_result.transaction_hash,
-                        "anchored_at": anchor_result.anchored_at.isoformat(),
-                    },
-                )
+            with trace_stage("proof.register", "polygon_anchor", user_id=str(user.id)):
+                try:
+                    anchor_result = self.onchain_anchor.anchor_hash(file_hash)
+                except OnChainConfigurationError as exc:
+                    logger.warning("onchain_configuration_error", error=str(exc))
+                except Exception as exc:  # pragma: no cover - external dependency
+                    logger.error("onchain_anchor_failed", error=str(exc))
+                else:
+                    proof.blockchain_tx = anchor_result.transaction_hash
+                    proof.anchor_signature = anchor_result.anchor_signature
+                    proof.anchored_at = anchor_result.anchored_at
+                    queue_event(
+                        user.id,
+                        "proof.anchored",
+                        {
+                            "proof_id": str(proof.id),
+                            "transaction_hash": anchor_result.transaction_hash,
+                            "anchored_at": anchor_result.anchored_at.isoformat(),
+                        },
+                    )
         ots_receipt = None
         if "opentimestamps" in self.settings.multi_anchor_targets:
             ots_result = self.open_timestamp_anchor.anchor_hash(file_hash)
@@ -414,27 +433,38 @@ class ProofRegistrationService:
 
         merkle_leaf = hashlib.sha256(bytes.fromhex(file_hash)).hexdigest()
         merkle_root = merkle_leaf
-        ledger_entry = self.ledger.append(
-            db,
-            proof,
-            normalized_asset.normalized_hash,
-            merkle_root,
-            merkle_leaf,
-            receipts,
-        )
-        ledger_payload = self.ledger.build_receipt_json(proof, ledger_entry)
-        _, manifest_ref = self.c2pa.embed(
-            normalized_tmp,
-            C2PAManifestContext(
-                proof_id=str(proof.id),
-                normalized_hash=file_hash,
-                signature=signature,
-                metadata=metadata_payload,
-                ledger_entry=ledger_payload["ledger"],
-                receipts=ledger_payload["blockchain_receipts"],
-            ),
-        )
+        with trace_stage("proof.register", "ledger", user_id=str(user.id)):
+            ledger_entry = self.ledger.append(
+                db,
+                proof,
+                normalized_asset.normalized_hash,
+                merkle_root,
+                merkle_leaf,
+                receipts,
+            )
+            ledger_payload = self.ledger.build_receipt_json(proof, ledger_entry)
+        with trace_stage("proof.register", "c2pa", user_id=str(user.id)):
+            _, manifest_ref = self.c2pa.embed(
+                normalized_tmp,
+                C2PAManifestContext(
+                    proof_id=str(proof.id),
+                    normalized_hash=file_hash,
+                    signature=signature,
+                    metadata=metadata_payload,
+                    ledger_entry=ledger_payload["ledger"],
+                    receipts=ledger_payload["blockchain_receipts"],
+                ),
+            )
         proof.c2pa_manifest_ref = manifest_ref
+        artifact = self._persist_artifact(
+            proof,
+            user,
+            metadata_payload,
+            signature,
+            db,
+            transparency_log=ledger_payload["ledger"],
+            receipts=ledger_payload["blockchain_receipts"],
+        )
 
         final_normalized_bytes = (
             normalized_tmp.read_bytes()

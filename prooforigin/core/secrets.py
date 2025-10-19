@@ -115,6 +115,43 @@ class MasterKeyProvider:
             logger.warning("vault_master_key_fallback")
         return self._from_local()
 
+    def rotate_master_key(self) -> bytes:
+        """Generate and persist a new master key using the configured backend."""
+
+        new_key = os.urandom(32)
+        backend = (self.settings.secrets_backend or "local").lower()
+        if backend == "aws_kms":
+            try:
+                kms = boto3.client("kms", region_name=self.settings.aws_region)
+                response = kms.encrypt(
+                    KeyId=self.settings.aws_kms_key_id,
+                    Plaintext=new_key,
+                )
+                ciphertext = response.get("CiphertextBlob")
+                if ciphertext:
+                    encoded = base64.b64encode(ciphertext).decode()
+                    self.settings.kms_encrypted_master_key = encoded
+                    logger.info("kms_master_key_rotated")
+                    return new_key
+            except Exception as exc:  # pragma: no cover - external service
+                logger.error("kms_rotate_failed", error=str(exc))
+        elif backend == "vault" and hvac is not None:
+            try:
+                client = hvac.Client(url=self.settings.vault_addr, token=self.settings.vault_token)
+                if client.is_authenticated():
+                    path = self.settings.vault_master_key_path or "secret/data/prooforigin/master"
+                    client.secrets.kv.v2.create_or_update_secret(
+                        path=path,
+                        secret={"master_key_b64": base64.b64encode(new_key).decode()},
+                    )
+                    logger.info("vault_master_key_rotated")
+                    return new_key
+            except Exception as exc:  # pragma: no cover - external service
+                logger.error("vault_rotate_failed", error=str(exc))
+        logger.warning("master_key_rotation_local")
+        os.environ["PROOFORIGIN_MASTER_KEY_B64"] = base64.b64encode(new_key).decode()
+        return new_key
+
 
 def derive_ledgers_signing_key(settings: "Settings") -> ed25519.Ed25519PrivateKey:
     """Derive or load the transparency log signing key."""

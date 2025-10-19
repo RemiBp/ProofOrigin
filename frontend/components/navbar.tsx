@@ -15,7 +15,19 @@ export function NavBar() {
         </span>
         <span>ProofOrigin</span>
       </Link>
-      <nav style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+      <nav style={{ display: "flex", alignItems: "center", gap: "0.8rem" }}>
+        <Link href="/verify" className="btn btn-ghost">
+          {t.nav.verify}
+        </Link>
+        <Link href="/log" className="btn btn-ghost">
+          {t.nav.log}
+        </Link>
+        <Link href="/showcase" className="btn btn-ghost">
+          {t.nav.showcase}
+        </Link>
+        <Link href="/docs" className="btn btn-ghost">
+          {t.nav.docs}
+        </Link>
         <Link href="/pricing" className="btn btn-secondary" style={{ paddingInline: "1.2rem" }}>
           {t.nav.pricing}
         </Link>

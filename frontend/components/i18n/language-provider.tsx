@@ -12,6 +12,9 @@ const translations = {
       pricing: "Tarifs",
       dashboard: "Dashboard",
       docs: "Documentation API",
+      verify: "Vérifier",
+      log: "Journal",
+      showcase: "Cas clients",
     },
     language: {
       switchToEnglish: "Passer en anglais",
@@ -226,6 +229,9 @@ const translations = {
       pricing: "Pricing",
       dashboard: "Dashboard",
       docs: "API Docs",
+      verify: "Verify",
+      log: "Log",
+      showcase: "Showcase",
     },
     language: {
       switchToEnglish: "Switch to English",

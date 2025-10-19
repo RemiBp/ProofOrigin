@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import base64
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,6 +15,8 @@ from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
 from prooforigin.core.plans import get_plan_details
 from prooforigin.core.logging import get_logger
+from prooforigin.core.settings import get_settings
+from prooforigin.services.ledger import TransparencyLedger
 from prooforigin.services.proofs import ProofContent, ProofRegistrationService
 from prooforigin.services.similarity import SimilarityEngine
 
@@ -22,6 +25,8 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["public-api"])
 registration_service = ProofRegistrationService()
 similarity_engine = SimilarityEngine()
+ledger_service = TransparencyLedger()
+settings = get_settings()
 
 
 def _decode_payload(item: schemas.ProofSubmission) -> tuple[ProofContent, str | None]:
@@ -330,6 +335,38 @@ def api_current_key(api_key: models.ApiKey = Depends(get_api_key_record)) -> sch
         last_used_at=api_key.last_used_at,
         plan=api_key.user.subscription_plan,
     )
+
+
+@router.get("/transparency", response_model=schemas.TransparencyLogResponse)
+def api_transparency_log(
+    current_user: models.User = Depends(get_api_key_user),
+    db: Session = Depends(get_db),
+    page: int = 1,
+    page_size: int = 25,
+    profile: str | None = None,
+    model: str | None = None,
+    asset_hash: str | None = None,
+) -> schemas.TransparencyLogResponse:
+    entries, total = ledger_service.list_entries(
+        db,
+        page=page,
+        page_size=page_size,
+        profile=profile,
+        model=model,
+        asset_hash=asset_hash,
+    )
+    serialized = [ledger_service.serialize_entry(entry) for entry in entries]
+    return schemas.TransparencyLogResponse(
+        entries=[schemas.TransparencyLogEntry(**item) for item in serialized],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@router.get("/risk-thresholds", response_model=schemas.RiskThresholds)
+def api_risk_thresholds() -> schemas.RiskThresholds:
+    return schemas.RiskThresholds(phash=0.85, clip=0.85, overall=0.9)
 
 
 __all__ = ["router"]
