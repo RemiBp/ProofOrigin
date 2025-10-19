@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { API_BASE_URL, APP_ORIGIN } from "../lib/config";
 import { useTranslations } from "./i18n/language-provider";
@@ -19,6 +20,11 @@ interface ProofResult {
   blockchain_tx?: string | null;
   metadata?: Record<string, unknown> | null;
   owner?: ProofOwner | null;
+interface ProofResult {
+  id: string;
+  file_hash: string;
+  created_at: string;
+  blockchain_tx?: string | null;
 }
 
 const emptyResult: ProofResult | null = null;
@@ -48,6 +54,16 @@ async function sha256FromText(input: string): Promise<string> {
   return sha256FromBuffer(encoded.buffer);
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  return btoa(binary);
+}
+
 export function UploadForm() {
   const [apiKey, setApiKey] = useState("");
   const [keyPassword, setKeyPassword] = useState("");
@@ -64,6 +80,8 @@ export function UploadForm() {
     if (!proof?.owner) return null;
     return proof.owner.display_name ?? proof.owner.email ?? proof.owner.id ?? null;
   }, [proof?.owner]);
+
+  const t = useTranslations();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -90,6 +108,8 @@ export function UploadForm() {
     setStatus(t.upload.statusHashing);
     setProof(null);
     setClientHash(null);
+    setStatus(t.upload.statusLoading);
+    setProof(null);
 
     try {
       const payload: Record<string, unknown> = {
@@ -101,6 +121,8 @@ export function UploadForm() {
         const buffer = await file.arrayBuffer();
         computedHash = await sha256FromBuffer(buffer);
         payload.content = arrayBufferToBase64(buffer);
+      if (file) {
+        payload.content = await fileToBase64(file);
         payload.filename = file.name;
         payload.mime_type = file.type;
       } else {
@@ -138,6 +160,8 @@ export function UploadForm() {
           if (fallback) message = fallback;
         }
         throw new Error(message);
+        const errorText = await response.text();
+        throw new Error(errorText || `Erreur ${response.status}`);
       }
 
       const data = await response.json();
@@ -149,6 +173,8 @@ export function UploadForm() {
         blockchain_tx: data.blockchain_tx,
         metadata: data.metadata,
         owner: data.owner,
+        created_at: data.created_at,
+        blockchain_tx: data.blockchain_tx,
       });
       setStatus(t.upload.statusSuccess);
     } catch (error) {
@@ -224,6 +250,8 @@ export function UploadForm() {
               {t.upload.ownerLabel} {proofOwnerLabel}
             </p>
           )}
+            {t.upload.createdAtLabel} {new Date(proof.created_at).toLocaleString()}
+          </p>
           {proof.blockchain_tx ? (
             <a href={`https://polygonscan.com/tx/${proof.blockchain_tx}`} target="_blank" rel="noreferrer">
               {t.upload.anchorLink}

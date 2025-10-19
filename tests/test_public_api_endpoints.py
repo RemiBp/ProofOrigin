@@ -272,6 +272,7 @@ def test_list_proofs_includes_registered_entry(
     owner = matching[0].get("owner")
     assert owner is not None
     assert owner.get("id") == str(auth_context["user_id"])
+    assert any(item["id"] == registered_proof["id"] for item in payload["items"])
 
 
 def test_anchor_endpoint_returns_current_state(

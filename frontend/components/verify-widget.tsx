@@ -48,6 +48,8 @@ export function VerifyWidget() {
           if (fallback) message = fallback;
         }
         throw new Error(message);
+      if (!response.ok) {
+        throw new Error(`Vérification impossible (${response.status})`);
       }
       const data = await response.json();
       setResult(data);

@@ -78,6 +78,12 @@ export default function PricingPage() {
     }
   };
 
+import Link from "next/link";
+
+import { useTranslations } from "../../components/i18n/language-provider";
+
+export default function PricingPage() {
+  const t = useTranslations();
   return (
     <section className="glass-card" style={{ gap: "2rem" }}>
       <header>
@@ -137,6 +143,12 @@ export default function PricingPage() {
           {t.pricing.openCheckout}
         </a>
       )}
+            <Link className="btn btn-primary" href={`/dashboard?plan=${plan.value}`}>
+              {t.pricing.choosePlan}
+            </Link>
+          </article>
+        ))}
+      </div>
       <div className="cta-banner">
         <h3 style={{ margin: 0 }}>{t.pricing.contactTitle}</h3>
         <p style={{ margin: 0 }}>{t.pricing.contactDescription}</p>

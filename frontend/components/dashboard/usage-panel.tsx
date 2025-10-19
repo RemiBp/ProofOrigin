@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useState } from "react";
 import useSWR from "swr";
 
 import { API_BASE_URL } from "../../lib/config";
@@ -67,6 +68,21 @@ export function UsagePanel() {
   } = useSWR(
     apiKey ? [`${API_BASE_URL}/api/v1/usage/logs`, apiKey] : null,
     ([url, key]) => authorizedFetch<UsageLogTimeline>(url, key),
+  const fetcher = useCallback(async (url: string, key: string) => {
+    const response = await fetch(url, {
+      headers: {
+        "X-API-Key": key,
+      },
+    });
+    if (!response.ok) {
+      throw new Error(String(response.status));
+    }
+    return (await response.json()) as UsageResponse;
+  }, []);
+
+  const { data, error, mutate, isLoading } = useSWR(
+    apiKey ? [`${API_BASE_URL}/api/v1/usage`, apiKey] : null,
+    ([url, key]) => fetcher(url, key),
     { revalidateOnFocus: false }
   );
 
@@ -120,6 +136,9 @@ export function UsagePanel() {
           if (actions.length) {
             await Promise.all(actions);
           }
+        onSubmit={(event) => {
+          event.preventDefault();
+          mutate();
         }}
       >
         <label>

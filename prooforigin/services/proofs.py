@@ -298,6 +298,8 @@ class ProofRegistrationService:
         if client_hash:
             metadata_payload.setdefault("client", {})
             metadata_payload["client"]["original_hash"] = client_hash.lower()
+    ) -> ProofCreationResult:
+        metadata_payload = self._parse_metadata(metadata_raw)
         with trace_stage("proof.register", "normalize", user_id=str(user.id)):
             normalized_asset = self.pipeline.normalize(content)
         file_hash = normalized_asset.normalized_hash
