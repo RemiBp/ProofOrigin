@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,6 +36,7 @@ class UserProfile(BaseModel):
     is_verified: bool
     is_admin: bool
     created_at: datetime
+    subscription_plan: str
 
 
 class ProofMetadata(BaseModel):
@@ -46,9 +47,16 @@ class ProofMetadata(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProofOwner(BaseModel):
+    id: uuid.UUID
+    email: str | None = None
+    display_name: str | None = None
+
+
 class ProofResponse(BaseModel):
     id: uuid.UUID
     file_hash: str
+    normalized_hash: str
     signature: str
     metadata: dict[str, Any] | None
     anchored_at: datetime | None
@@ -60,6 +68,12 @@ class ProofResponse(BaseModel):
     matches: list[dict[str, Any]] = Field(default_factory=list)
     proof_artifact: dict[str, Any] | None = None
     anchor_batch_id: uuid.UUID | None = None
+    pipeline_version: str
+    risk_score: int
+    ledger: dict[str, Any] | None = None
+    c2pa_manifest_ref: str | None = None
+    opentimestamps_receipt: dict[str, Any] | None = None
+    owner: ProofOwner | None = None
 
 
 class ProofListResponse(BaseModel):
@@ -84,6 +98,32 @@ class VerifyResult(BaseModel):
     timestamp: datetime
 
 
+class HashVerificationResponse(BaseModel):
+    exists: bool
+    proof_id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    owner_id: uuid.UUID | None = None
+    owner_email: str | None = None
+    anchored: bool = False
+    blockchain_tx: str | None = None
+
+
+class PublicProofStatus(BaseModel):
+    hash: str
+    status: Literal["verified", "missing"]
+    created_at: datetime | None
+    owner: dict[str, Any] | None
+    download_url: str | None
+    blockchain_tx: str | None
+    anchored: bool
+    proof_id: uuid.UUID | None
+    normalized_hash: str | None = None
+    ledger: dict[str, Any] | None = None
+    c2pa_manifest_ref: str | None = None
+    opentimestamps_receipt: dict[str, Any] | None = None
+    risk_score: int | None = None
+
+
 class SimilarityRequest(BaseModel):
     text: str | None = None
     top_k: int = 5
@@ -95,6 +135,20 @@ class UsageResponse(BaseModel):
     remaining_credits: int
     last_payment: datetime | None
     next_anchor_batch: datetime | None = None
+    plan: str
+    rate_limit_per_minute: int
+    monthly_quota: int
+
+
+class UsageLogEntry(BaseModel):
+    id: int
+    action: str
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class UsageLogTimeline(BaseModel):
+    entries: list[UsageLogEntry]
 
 
 class ReportRequest(BaseModel):
@@ -121,9 +175,103 @@ class BatchVerifyResponse(BaseModel):
     status: str
 
 
+class ApiKeyResponse(BaseModel):
+    id: int
+    key: str
+    quota: int
+    created_at: datetime
+    last_used_at: datetime | None = None
+    plan: str
+
+
+class ProofSubmission(BaseModel):
+    content: str | None = None
+    text: str | None = None
+    filename: str | None = None
+    mime_type: str | None = None
+    metadata: dict[str, Any] | None = None
+    key_password: str
+    client_hash: str | None = None
+
+
+class BatchProofItem(BaseModel):
+    content: str | None = None
+    text: str | None = None
+    filename: str | None = None
+    mime_type: str | None = None
+    metadata: dict[str, Any] | None = None
+    client_hash: str | None = None
+
+
+class BatchProofRequest(BaseModel):
+    items: list[BatchProofItem]
+    key_password: str
+
+
+class BatchProofResult(BaseModel):
+    success: bool
+    proof: ProofResponse | None = None
+    error: str | None = None
+
+
+class BatchProofResponsePayload(BaseModel):
+    results: list[BatchProofResult]
+
+
+class TransparencyLogFilter(BaseModel):
+    profile: str | None = None
+    model: str | None = None
+    asset_hash: str | None = None
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+
+
+class TransparencyLogEntry(BaseModel):
+    id: uuid.UUID
+    proof_id: uuid.UUID | None
+    profile: str | None = None
+    asset_hash: str
+    anchored_at: datetime | None
+    created_at: datetime
+    receipts: list[dict[str, Any]]
+    chain: str | None = None
+    model: str | None = None
+    metadata: dict[str, Any] | None = None
+    sequence: int
+
+
+class TransparencyLogResponse(BaseModel):
+    entries: list[TransparencyLogEntry]
+    total: int
+    page: int
+    page_size: int
+
+
+class RiskThresholds(BaseModel):
+    phash: float
+    clip: float
+    overall: float
+
+
+class AIProofRequest(BaseModel):
+    model_name: str
+    prompt: str | None = None
+    content: str | None = None
+    text: str | None = None
+    metadata: dict[str, Any] | None = None
+    key_password: str
+    webhook_event: str | None = None
+    client_hash: str | None = None
+
+
 class StripeCheckoutResponse(BaseModel):
     checkout_url: str
     credits: int
+    plan: str
+
+
+class StripeCheckoutRequest(BaseModel):
+    plan: Literal["free", "pro", "business"] = "pro"
 
 
 class UploadKeyRequest(BaseModel):
@@ -201,6 +349,8 @@ __all__ = [
     "ProofListResponse",
     "VerifyRequest",
     "VerifyResult",
+    "HashVerificationResponse",
+    "PublicProofStatus",
     "SimilarityRequest",
     "UsageResponse",
     "ReportRequest",
@@ -217,4 +367,12 @@ __all__ = [
     "AdminProofSummary",
     "WebhookSubscriptionCreate",
     "WebhookSubscriptionResponse",
+    "ApiKeyResponse",
+    "ProofSubmission",
+    "BatchProofItem",
+    "BatchProofRequest",
+    "BatchProofResult",
+    "BatchProofResponsePayload",
+    "AIProofRequest",
+    "StripeCheckoutRequest",
 ]

@@ -5,7 +5,17 @@
   "blockchain": {
     "enabled": false,
     "rpc_url": "https://polygon-rpc.com",
-    "private_key": null
+    "private_key": null,
+    "contract_address": null,
+    "contract_abi": null,
+    "chain_id": 137
+  },
+  "opentimestamps_endpoint": "https://a.pool.opentimestamps.org",
+  "secrets_backend": "vault",
+  "vault": {
+    "addr": "https://vault.example.com",
+    "token": null,
+    "master_key_path": "secret/data/prooforigin/master"
   },
   "stripe": {
     "api_key": null,

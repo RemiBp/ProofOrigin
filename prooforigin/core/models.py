@@ -46,6 +46,7 @@ class User(Base):
     verification_sent_at: Mapped[datetime | None]
     last_login_at: Mapped[datetime | None]
     credits: Mapped[int] = mapped_column(Integer, default=0)
+    subscription_plan: Mapped[str] = mapped_column(String(32), default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -66,6 +67,7 @@ class Proof(Base):
     id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     file_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    normalized_hash: Mapped[str | None] = mapped_column(String(128), index=True)
     signature: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
     file_name: Mapped[str | None]
@@ -78,6 +80,14 @@ class Proof(Base):
     anchored_at: Mapped[datetime | None]
     blockchain_tx: Mapped[str | None]
     anchor_signature: Mapped[str | None]
+    pipeline_version: Mapped[str] = mapped_column(String(16), default="v2")
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)
+    c2pa_manifest_ref: Mapped[str | None] = mapped_column(String(512))
+    merkle_leaf: Mapped[str | None] = mapped_column(String(256))
+    opentimestamps_receipt: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    ledger_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("transparency_log_entries.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user: Mapped["User"] = relationship(back_populates="proofs")
@@ -85,13 +95,29 @@ class Proof(Base):
     matches: Mapped[list["SimilarityMatch"]] = relationship(
         back_populates="proof", cascade="all,delete", foreign_keys="SimilarityMatch.proof_id"
     )
-    alerts: Mapped[list["Alert"]] = relationship(back_populates="proof", cascade="all,delete")
+    alerts: Mapped[list["Alert"]] = relationship(
+        back_populates="proof",
+        cascade="all,delete",
+        foreign_keys="Alert.proof_id",
+    )
     anchor_batch_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("anchor_batches.id"), nullable=True, index=True
     )
     anchor_batch: Mapped[Optional["AnchorBatch"]] = relationship(back_populates="proofs")
     relations: Mapped[list["ProofRelation"]] = relationship(
         back_populates="source_proof", cascade="all,delete", foreign_keys="ProofRelation.source_proof_id"
+    )
+    verifications: Mapped[list["Verification"]] = relationship(
+        back_populates="proof", cascade="all,delete"
+    )
+    ledger_entry: Mapped[Optional["TransparencyLogEntry"]] = relationship(
+        foreign_keys=[ledger_entry_id]
+    )
+    chain_receipts: Mapped[list["ChainReceipt"]] = relationship(
+        back_populates="proof", cascade="all,delete"
+    )
+    fingerprints: Mapped[list["AssetFingerprint"]] = relationship(
+        back_populates="proof", cascade="all,delete"
     )
 
 
@@ -107,6 +133,20 @@ class ProofFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     proof: Mapped["Proof"] = relationship(back_populates="files")
+
+
+class Verification(Base):
+    __tablename__ = "verifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    proof_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("proofs.id"))
+    hash: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    requester_ip: Mapped[str | None] = mapped_column(String(128))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    proof: Mapped[Optional["Proof"]] = relationship(back_populates="verifications")
 
 
 class SimilarityMatch(Base):
@@ -286,10 +326,86 @@ class AnchorBatch(Base):
     merkle_root: Mapped[str] = mapped_column(String(128), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     transaction_hash: Mapped[str | None]
+    opentimestamps_receipt: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    batch_size: Mapped[int] = mapped_column(Integer, default=0)
+    anchored_chain: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     anchored_at: Mapped[datetime | None]
 
     proofs: Mapped[list["Proof"]] = relationship(back_populates="anchor_batch")
+
+
+class TransparencyLogEntry(Base):
+    __tablename__ = "transparency_log_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, primary_key=True)
+    sequence: Mapped[int] = mapped_column(Integer, index=True, unique=True)
+    proof_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("proofs.id"))
+    file_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    normalized_hash: Mapped[str | None] = mapped_column(String(128))
+    merkle_root: Mapped[str] = mapped_column(String(256), nullable=False)
+    merkle_leaf: Mapped[str] = mapped_column(String(256), nullable=False)
+    parent_hash: Mapped[str | None] = mapped_column(String(256))
+    entry_hash: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
+    signature: Mapped[str] = mapped_column(String(512), nullable=False)
+    transparency_log: Mapped[str] = mapped_column(String(64), default="primary")
+    anchored_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    proof: Mapped[Optional["Proof"]] = relationship(
+        foreign_keys=[proof_id]
+    )
+    receipts: Mapped[list["ChainReceipt"]] = relationship(
+        back_populates="transparency_entry", cascade="all,delete"
+    )
+
+
+class ChainReceipt(Base):
+    __tablename__ = "chain_receipts"
+
+    id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4, primary_key=True)
+    proof_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proofs.id"), nullable=False, index=True)
+    transparency_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("transparency_log_entries.id")
+    )
+    chain: Mapped[str] = mapped_column(String(64), nullable=False)
+    transaction_hash: Mapped[str | None] = mapped_column(String(256))
+    receipt_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONType)
+    anchored_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    proof: Mapped["Proof"] = relationship(back_populates="chain_receipts")
+    transparency_entry: Mapped[Optional["TransparencyLogEntry"]] = relationship(
+        back_populates="receipts"
+    )
+
+
+class AssetFingerprint(Base):
+    __tablename__ = "asset_fingerprints"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    proof_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("proofs.id"), nullable=False, index=True)
+    fingerprint_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[str | None] = mapped_column(String(256))
+    vector: Mapped[list[float] | None] = mapped_column(JSONType)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    proof: Mapped["Proof"] = relationship(back_populates="fingerprints")
+
+
+class UsageMeter(Base):
+    __tablename__ = "usage_meters"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    project: Mapped[str] = mapped_column(String(128), default="default")
+    metered_action: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, default=0)
+    window_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    window_end: Mapped[datetime | None]
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONType)
+
+    user: Mapped["User"] = relationship()
 
 
 class KeyRevocation(Base):
@@ -307,6 +423,7 @@ __all__ = [
     "User",
     "Proof",
     "ProofFile",
+    "Verification",
     "SimilarityMatch",
     "SimilarityIndex",
     "ApiKey",
@@ -320,4 +437,8 @@ __all__ = [
     "KeyRevocation",
     "WebhookSubscription",
     "WebhookDelivery",
+    "TransparencyLogEntry",
+    "ChainReceipt",
+    "AssetFingerprint",
+    "UsageMeter",
 ]
