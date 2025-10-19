@@ -47,6 +47,12 @@ class ProofMetadata(BaseModel):
     extra: dict[str, Any] = Field(default_factory=dict)
 
 
+class ProofOwner(BaseModel):
+    id: uuid.UUID
+    email: str | None = None
+    display_name: str | None = None
+
+
 class ProofResponse(BaseModel):
     id: uuid.UUID
     file_hash: str
@@ -67,6 +73,7 @@ class ProofResponse(BaseModel):
     ledger: dict[str, Any] | None = None
     c2pa_manifest_ref: str | None = None
     opentimestamps_receipt: dict[str, Any] | None = None
+    owner: ProofOwner | None = None
 
 
 class ProofListResponse(BaseModel):
@@ -133,6 +140,17 @@ class UsageResponse(BaseModel):
     monthly_quota: int
 
 
+class UsageLogEntry(BaseModel):
+    id: int
+    action: str
+    created_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class UsageLogTimeline(BaseModel):
+    entries: list[UsageLogEntry]
+
+
 class ReportRequest(BaseModel):
     proof_id: uuid.UUID | None = None
     match_id: int | None = None
@@ -173,6 +191,7 @@ class ProofSubmission(BaseModel):
     mime_type: str | None = None
     metadata: dict[str, Any] | None = None
     key_password: str
+    client_hash: str | None = None
 
 
 class BatchProofItem(BaseModel):
@@ -181,6 +200,7 @@ class BatchProofItem(BaseModel):
     filename: str | None = None
     mime_type: str | None = None
     metadata: dict[str, Any] | None = None
+    client_hash: str | None = None
 
 
 class BatchProofRequest(BaseModel):
@@ -241,6 +261,7 @@ class AIProofRequest(BaseModel):
     metadata: dict[str, Any] | None = None
     key_password: str
     webhook_event: str | None = None
+    client_hash: str | None = None
 
 
 class StripeCheckoutResponse(BaseModel):

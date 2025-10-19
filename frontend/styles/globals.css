@@ -6,6 +6,13 @@
   --accent: #22d3ee;
   --card: rgba(255, 255, 255, 0.85);
   --border: rgba(15, 23, 42, 0.08);
+  --space-xs: 0.35rem;
+  --space-sm: 0.65rem;
+  --space-md: 1rem;
+  --space-lg: 1.6rem;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-soft: 0 25px 65px rgba(15, 23, 42, 0.12);
 }
 
 [data-theme='dark'] {
@@ -16,6 +23,7 @@
   --accent: #38bdf8;
   --card: rgba(15, 23, 42, 0.7);
   --border: rgba(148, 163, 184, 0.1);
+  --shadow-soft: 0 25px 65px rgba(2, 6, 23, 0.45);
 }
 
 * {
@@ -48,6 +56,12 @@ main {
 .glass-card {
   background: var(--card);
   border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: calc(var(--space-lg) * 1.5);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  gap: var(--space-lg);
   border-radius: 24px;
   padding: 2.4rem;
   backdrop-filter: blur(14px);
@@ -103,6 +117,8 @@ main {
 
 input, textarea, select {
   width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
   border-radius: 16px;
   border: 1px solid var(--border);
@@ -118,6 +134,7 @@ input, textarea, select {
 
 .grid {
   display: grid;
+  gap: var(--space-md);
   gap: 1.2rem;
 }
 
@@ -155,6 +172,58 @@ input, textarea, select {
   gap: 1rem;
 }
 
+.metadata-block {
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.metadata-block h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.metadata-block pre {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.07);
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.85rem;
+}
+
+.helper-text {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+[data-theme='dark'] .helper-text {
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.remember-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.95rem;
+}
+
+.remember-toggle input {
+  width: auto;
+  accent-color: var(--primary);
+}
+
+.cta-banner {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(14, 165, 233, 0.85));
+  color: #fff;
+  padding: calc(var(--space-lg) * 1.2);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-sm);
 .cta-banner {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(14, 165, 233, 0.85));
   color: #fff;
@@ -168,6 +237,90 @@ footer {
   padding: 2rem 1.5rem 3rem;
   text-align: center;
   color: rgba(148, 163, 184, 0.88);
+}
+
+.activity-card {
+  gap: var(--space-md);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-md);
+}
+
+.timeline__item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.timeline__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  box-shadow: 0 0 18px var(--primary-glow);
+  margin-top: 0.35rem;
+}
+
+.timeline__content {
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.timeline__header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  font-weight: 600;
+}
+
+.timeline__action {
+  color: var(--primary);
+}
+
+.timeline__time {
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+.timeline__metadata {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.timeline__metadata-label {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.timeline__metadata pre {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.07);
+  max-height: 200px;
+  overflow: auto;
+  font-size: 0.8rem;
+}
+
+[data-theme='dark'] .metadata-block pre,
+[data-theme='dark'] .timeline__metadata pre {
+  background: rgba(8, 47, 73, 0.4);
+}
+
+[data-theme='dark'] .timeline__content {
+  background: rgba(30, 41, 59, 0.45);
 }
 
 @media (max-width: 720px) {

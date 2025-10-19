@@ -33,6 +33,21 @@ export function VerifyWidget() {
       const response = await fetch(`${API_BASE_URL}/verify/${encodeURIComponent(hash.trim())}`, {
         cache: "no-store",
       });
+      if (response.status === 404) {
+        setResult(null);
+        setStatus(t.verify.statusNotFound);
+        return;
+      }
+      if (!response.ok) {
+        let message = `Vérification impossible (${response.status})`;
+        try {
+          const payload = await response.json();
+          if (payload.detail) message = payload.detail;
+        } catch (parseError) {
+          const fallback = await response.text();
+          if (fallback) message = fallback;
+        }
+        throw new Error(message);
       if (!response.ok) {
         throw new Error(`Vérification impossible (${response.status})`);
       }

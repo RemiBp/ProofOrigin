@@ -1,10 +1,25 @@
 "use client";
 
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FormEvent, useEffect, useState } from "react";
 
 import { API_BASE_URL, APP_ORIGIN } from "../lib/config";
 import { useTranslations } from "./i18n/language-provider";
 
+interface ProofOwner {
+  id?: string;
+  email?: string | null;
+  display_name?: string | null;
+}
+
+interface ProofResult {
+  id: string;
+  file_hash: string;
+  normalized_hash: string;
+  created_at: string;
+  blockchain_tx?: string | null;
+  metadata?: Record<string, unknown> | null;
+  owner?: ProofOwner | null;
 interface ProofResult {
   id: string;
   file_hash: string;
@@ -13,6 +28,31 @@ interface ProofResult {
 }
 
 const emptyResult: ProofResult | null = null;
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function sha256FromBuffer(buffer: ArrayBuffer): Promise<string> {
+  if (typeof window === "undefined" || !window.crypto?.subtle) {
+    return "";
+  }
+  const digest = await window.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function sha256FromText(input: string): Promise<string> {
+  const encoded = new TextEncoder().encode(input);
+  return sha256FromBuffer(encoded.buffer);
+}
 
 async function fileToBase64(file: File): Promise<string> {
   const buffer = await file.arrayBuffer();
@@ -33,6 +73,14 @@ export function UploadForm() {
   const [proof, setProof] = useState<ProofResult | null>(emptyResult);
   const [loading, setLoading] = useState(false);
   const [appUrl, setAppUrl] = useState(APP_ORIGIN);
+  const [clientHash, setClientHash] = useState<string | null>(null);
+  const t = useTranslations();
+
+  const proofOwnerLabel = useMemo(() => {
+    if (!proof?.owner) return null;
+    return proof.owner.display_name ?? proof.owner.email ?? proof.owner.id ?? null;
+  }, [proof?.owner]);
+
   const t = useTranslations();
 
   useEffect(() => {
@@ -57,6 +105,9 @@ export function UploadForm() {
     }
 
     setLoading(true);
+    setStatus(t.upload.statusHashing);
+    setProof(null);
+    setClientHash(null);
     setStatus(t.upload.statusLoading);
     setProof(null);
 
@@ -65,15 +116,28 @@ export function UploadForm() {
         key_password: keyPassword,
         metadata: { channel: "web" },
       };
+      let computedHash: string | null = null;
+      if (file) {
+        const buffer = await file.arrayBuffer();
+        computedHash = await sha256FromBuffer(buffer);
+        payload.content = arrayBufferToBase64(buffer);
       if (file) {
         payload.content = await fileToBase64(file);
         payload.filename = file.name;
         payload.mime_type = file.type;
       } else {
         payload.text = textPayload;
+        computedHash = await sha256FromText(textPayload);
         payload.filename = `texte-${Date.now()}.txt`;
         payload.mime_type = "text/plain";
       }
+
+      if (computedHash) {
+        payload.client_hash = computedHash;
+        setClientHash(computedHash);
+      }
+
+      setStatus(t.upload.statusLoading);
 
       const response = await fetch(`${API_BASE_URL}/api/v1/proof`, {
         method: "POST",
@@ -85,6 +149,17 @@ export function UploadForm() {
       });
 
       if (!response.ok) {
+        let message = `Erreur ${response.status}`;
+        try {
+          const errorPayload = await response.json();
+          if (errorPayload.detail) {
+            message = errorPayload.detail;
+          }
+        } catch (parseError) {
+          const fallback = await response.text();
+          if (fallback) message = fallback;
+        }
+        throw new Error(message);
         const errorText = await response.text();
         throw new Error(errorText || `Erreur ${response.status}`);
       }
@@ -93,6 +168,11 @@ export function UploadForm() {
       setProof({
         id: data.id,
         file_hash: data.file_hash,
+        normalized_hash: data.normalized_hash,
+        created_at: data.created_at,
+        blockchain_tx: data.blockchain_tx,
+        metadata: data.metadata,
+        owner: data.owner,
         created_at: data.created_at,
         blockchain_tx: data.blockchain_tx,
       });
@@ -151,10 +231,25 @@ export function UploadForm() {
             {t.upload.proofHeading}
             {proof.id.slice(0, 8)}
           </h3>
+          {clientHash && (
+            <p style={{ margin: 0 }}>
+              {t.upload.clientHashLabel} <code>{clientHash}</code>
+            </p>
+          )}
           <p style={{ margin: 0 }}>
             {t.upload.hashLabel} {proof.file_hash}
           </p>
           <p style={{ margin: 0 }}>
+            {t.upload.normalizedHashLabel} {proof.normalized_hash}
+          </p>
+          <p style={{ margin: 0 }}>
+            {t.upload.createdAtLabel} {new Date(proof.created_at).toLocaleString()}
+          </p>
+          {proofOwnerLabel && (
+            <p style={{ margin: 0 }}>
+              {t.upload.ownerLabel} {proofOwnerLabel}
+            </p>
+          )}
             {t.upload.createdAtLabel} {new Date(proof.created_at).toLocaleString()}
           </p>
           {proof.blockchain_tx ? (
@@ -164,6 +259,14 @@ export function UploadForm() {
           ) : (
             <span>{t.upload.anchorPending}</span>
           )}
+          <div className="metadata-block">
+            <h4>{t.upload.metadataHeading}</h4>
+            {proof.metadata ? (
+              <pre>{JSON.stringify(proof.metadata, null, 2)}</pre>
+            ) : (
+              <p>{t.upload.metadataEmpty}</p>
+            )}
+          </div>
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
             <a className="btn btn-secondary" href={`${appUrl}/verify/${proof.file_hash}`} target="_blank" rel="noreferrer">
               {t.upload.verifyButton}

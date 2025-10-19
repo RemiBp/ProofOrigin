@@ -267,6 +267,11 @@ def test_list_proofs_includes_registered_entry(
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["total"] >= 1
+    matching = [item for item in payload["items"] if item["id"] == registered_proof["id"]]
+    assert matching
+    owner = matching[0].get("owner")
+    assert owner is not None
+    assert owner.get("id") == str(auth_context["user_id"])
     assert any(item["id"] == registered_proof["id"] for item in payload["items"])
 
 
@@ -308,6 +313,16 @@ def test_similarity_endpoint_returns_stubbed_match(
     assert response.status_code == 200, response.text
     results = response.json()
     assert any(item["id"] == registered_proof["id"] for item in results)
+
+
+def test_usage_logs_endpoint_returns_timeline(
+    client: TestClient, auth_context: Dict[str, object]
+) -> None:
+    response = client.get("/api/v1/usage/logs", headers=auth_context["headers"])
+    assert response.status_code == 200, response.text
+    timeline = response.json()
+    assert "entries" in timeline
+    assert isinstance(timeline["entries"], list)
 
 
 def test_manifest_route_serves_embedded_payload(

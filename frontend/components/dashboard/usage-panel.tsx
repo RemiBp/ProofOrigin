@@ -1,5 +1,6 @@
 "use client";
 
+import { FormEvent, useState } from "react";
 import { FormEvent, useCallback, useState } from "react";
 import useSWR from "swr";
 
@@ -17,6 +18,29 @@ interface UsageResponse {
   monthly_quota: number;
 }
 
+interface UsageLogEntry {
+  id: number;
+  action: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+interface UsageLogTimeline {
+  entries: UsageLogEntry[];
+}
+
+async function authorizedFetch<T>(url: string, key: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      "X-API-Key": key,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(String(response.status));
+  }
+  return (await response.json()) as T;
+}
+
 export function UsagePanel() {
   const [apiKey, setApiKey] = useState("");
   const [token, setToken] = useState("");
@@ -25,6 +49,25 @@ export function UsagePanel() {
   const [checkoutStatus, setCheckoutStatus] = useState<string>("");
   const t = useTranslations();
 
+  const {
+    data,
+    error,
+    mutate: refreshUsage,
+    isLoading,
+  } = useSWR(
+    apiKey ? [`${API_BASE_URL}/api/v1/usage`, apiKey] : null,
+    ([url, key]) => authorizedFetch<UsageResponse>(url, key),
+    { revalidateOnFocus: false }
+  );
+
+  const {
+    data: logData,
+    error: logError,
+    mutate: refreshLogs,
+    isLoading: logsLoading,
+  } = useSWR(
+    apiKey ? [`${API_BASE_URL}/api/v1/usage/logs`, apiKey] : null,
+    ([url, key]) => authorizedFetch<UsageLogTimeline>(url, key),
   const fetcher = useCallback(async (url: string, key: string) => {
     const response = await fetch(url, {
       headers: {
@@ -81,6 +124,18 @@ export function UsagePanel() {
       </div>
       <form
         className="grid"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const actions: Array<Promise<UsageResponse | UsageLogTimeline | undefined>> = [];
+          if (refreshUsage) {
+            actions.push(refreshUsage());
+          }
+          if (refreshLogs) {
+            actions.push(refreshLogs());
+          }
+          if (actions.length) {
+            await Promise.all(actions);
+          }
         onSubmit={(event) => {
           event.preventDefault();
           mutate();
@@ -95,6 +150,7 @@ export function UsagePanel() {
         </button>
       </form>
       {error && <p>{t.dashboard.usageError.replace("{{message}}", error.message)}</p>}
+      {logError && <p>{t.dashboard.usageError.replace("{{message}}", logError.message)}</p>}
       {data && (
         <div style={{ display: "grid", gap: "0.6rem" }}>
           <p style={{ margin: 0 }}>
@@ -150,6 +206,41 @@ export function UsagePanel() {
           {t.dashboard.checkoutOpen}
         </a>
       )}
+      <div className="glass-card activity-card">
+        <div className="section-heading">
+          <div>
+            <h3 style={{ margin: 0 }}>{t.dashboard.activityTitle}</h3>
+            <p style={{ marginTop: "0.25rem", color: "var(--primary)" }}>{t.dashboard.activitySubtitle}</p>
+          </div>
+        </div>
+        {logsLoading && <p>…</p>}
+        {logData && logData.entries.length === 0 && <p>{t.dashboard.activityEmpty}</p>}
+        {logData && logData.entries.length > 0 && (
+          <ul className="timeline">
+            {logData.entries.map((entry) => (
+              <li key={entry.id} className="timeline__item">
+                <div className="timeline__dot" />
+                <div className="timeline__content">
+                  <div className="timeline__header">
+                    <span className="timeline__action">{entry.action}</span>
+                    <span className="timeline__time">
+                      {t.dashboard.activityTimeLabel} {new Date(entry.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="timeline__metadata">
+                    <span className="timeline__metadata-label">{t.dashboard.activityMetadataLabel}</span>
+                    {entry.metadata && Object.keys(entry.metadata).length > 0 ? (
+                      <pre>{JSON.stringify(entry.metadata, null, 2)}</pre>
+                    ) : (
+                      <p>{t.dashboard.activityEmpty}</p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

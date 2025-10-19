@@ -130,6 +130,7 @@ async def generate_proof(
     file: UploadFile = File(...),
     metadata: str | None = Form(default=None),
     key_password: str = Form(...),
+    client_hash: str | None = Form(default=None),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> schemas.ProofResponse:
@@ -152,6 +153,7 @@ async def generate_proof(
             content,
             metadata,
             key_password,
+            client_hash=client_hash,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -168,6 +170,7 @@ async def register_creation(
     text: str | None = Form(default=None),
     metadata: str | None = Form(default=None),
     key_password: str = Form(...),
+    client_hash: str | None = Form(default=None),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> schemas.ProofResponse:
@@ -208,6 +211,7 @@ async def register_creation(
             metadata,
             key_password,
             text_payload=text_payload,
+            client_hash=client_hash,
         )
     except ValueError as exc:
         detail = str(exc)

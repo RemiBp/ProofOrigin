@@ -292,6 +292,12 @@ class ProofRegistrationService:
         metadata_raw: str | None,
         key_password: str,
         text_payload: str | None = None,
+        client_hash: str | None = None,
+    ) -> ProofCreationResult:
+        metadata_payload = self._parse_metadata(metadata_raw)
+        if client_hash:
+            metadata_payload.setdefault("client", {})
+            metadata_payload["client"]["original_hash"] = client_hash.lower()
     ) -> ProofCreationResult:
         metadata_payload = self._parse_metadata(metadata_raw)
         with trace_stage("proof.register", "normalize", user_id=str(user.id)):
@@ -549,6 +555,13 @@ class ProofRegistrationService:
             else None,
             "c2pa_manifest_ref": proof.c2pa_manifest_ref,
             "opentimestamps_receipt": proof.opentimestamps_receipt,
+            "owner": {
+                "id": proof.user.id,
+                "email": proof.user.email,
+                "display_name": proof.user.display_name,
+            }
+            if proof.user
+            else None,
         }
 
 

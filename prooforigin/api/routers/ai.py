@@ -66,6 +66,7 @@ def register_ai_proof(
             metadata_str,
             payload.key_password,
             text_payload=text_payload,
+            client_hash=payload.client_hash,
         )
     except ValueError as exc:
         detail = str(exc)

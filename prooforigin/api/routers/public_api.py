@@ -84,6 +84,7 @@ def api_register_proof(
             metadata_str,
             payload.key_password,
             text_payload=text_payload,
+            client_hash=payload.client_hash,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -155,6 +156,7 @@ def api_batch_register(
             mime_type=item.mime_type,
             metadata=item.metadata,
             key_password=payload.key_password,
+            client_hash=item.client_hash,
         )
         try:
             proof_response = api_register_proof(submission, api_key, current_user, db)
@@ -214,6 +216,32 @@ def api_usage(
         rate_limit_per_minute=plan_details.per_minute,
         monthly_quota=plan_details.monthly_quota,
     )
+
+
+@router.get("/usage/logs", response_model=schemas.UsageLogTimeline)
+def api_usage_logs(
+    current_user: models.User = Depends(get_api_key_user),
+    db: Session = Depends(get_db),
+    limit: int = 25,
+) -> schemas.UsageLogTimeline:
+    capped_limit = max(1, min(limit, 100))
+    logs = (
+        db.query(models.UsageLog)
+        .filter(models.UsageLog.user_id == current_user.id)
+        .order_by(models.UsageLog.created_at.desc())
+        .limit(capped_limit)
+        .all()
+    )
+    entries = [
+        schemas.UsageLogEntry(
+            id=log.id,
+            action=log.action,
+            created_at=log.created_at,
+            metadata=log.metadata_json or {},
+        )
+        for log in logs
+    ]
+    return schemas.UsageLogTimeline(entries=entries)
 
 
 @router.get("/proofs", response_model=schemas.ProofListResponse)
