@@ -298,13 +298,17 @@ class ProofRegistrationService:
         if client_hash:
             metadata_payload.setdefault("client", {})
             metadata_payload["client"]["original_hash"] = client_hash.lower()
-    ) -> ProofCreationResult:
-        metadata_payload = self._parse_metadata(metadata_raw)
+
         with trace_stage("proof.register", "normalize", user_id=str(user.id)):
             normalized_asset = self.pipeline.normalize(content)
-        file_hash = normalized_asset.normalized_hash
 
-        if db.query(models.Proof).filter(models.Proof.file_hash == file_hash).first():
+        normalized_hash = normalized_asset.normalized_hash
+
+        if (
+            db.query(models.Proof)
+            .filter(models.Proof.file_hash == normalized_hash)
+            .first()
+        ):
             raise ValueError("Proof already exists")
 
         try:
@@ -318,202 +322,210 @@ class ProofRegistrationService:
             raise ValueError("Unable to decrypt private key") from exc
 
         with trace_stage("proof.register", "sign", user_id=str(user.id)):
-            signature = sign_hash(file_hash, private_key)
+            signature = sign_hash(normalized_hash, private_key)
 
         tmp_file: Path | None = None
-        normalized_tmp: Path | None
-        if content.is_binary:
-            raw_tmp = tempfile.NamedTemporaryFile(delete=False)
-            try:
-                raw_tmp.write(content.data)
-            finally:
-                raw_tmp.close()
-            tmp_file = Path(raw_tmp.name)
-        normalized_handle = tempfile.NamedTemporaryFile(delete=False)
+        normalized_tmp: Path | None = None
+        artifact: dict[str, Any] | None = None
+
         try:
-            normalized_handle.write(normalized_asset.normalized_bytes)
-        finally:
-            normalized_handle.close()
-        normalized_tmp = Path(normalized_handle.name)
+            if content.is_binary:
+                with tempfile.NamedTemporaryFile(delete=False) as raw_tmp:
+                    raw_tmp.write(content.data)
+                    tmp_file = Path(raw_tmp.name)
 
-        with trace_stage("proof.register", "embeddings", user_id=str(user.id)):
-            clip_vector, text_embedding = self._compute_embeddings(
-                normalized_tmp,
-                metadata_payload,
-                text_payload,
+            with tempfile.NamedTemporaryFile(delete=False) as normalized_handle:
+                normalized_handle.write(normalized_asset.normalized_bytes)
+                normalized_tmp = Path(normalized_handle.name)
+
+            with trace_stage("proof.register", "embeddings", user_id=str(user.id)):
+                clip_vector, text_embedding = self._compute_embeddings(
+                    normalized_tmp,
+                    metadata_payload,
+                    text_payload,
+                )
+
+            phash = normalized_asset.phash
+            dhash = normalized_asset.dhash
+            perceptual_vector = normalized_asset.perceptual_vector
+            if normalized_tmp and normalized_tmp.exists():
+                (
+                    alt_phash,
+                    alt_dhash,
+                    alt_vector,
+                    alt_clip,
+                ) = self.similarity_engine.compute_image_hashes(normalized_tmp)
+                clip_vector = clip_vector or alt_clip
+                phash = phash or alt_phash
+                dhash = dhash or alt_dhash
+                perceptual_vector = perceptual_vector or alt_vector
+
+            proof = models.Proof(
+                user_id=user.id,
+                file_hash=normalized_hash,
+                normalized_hash=normalized_hash,
+                signature=signature,
+                metadata_json=metadata_payload,
+                file_name=content.filename,
+                mime_type=content.mime_type,
+                file_size=len(content.data),
+                phash=phash,
+                dhash=dhash,
+                image_embedding=clip_vector,
+                text_embedding=text_embedding,
+                pipeline_version=self.settings.pipeline_version,
             )
+            db.add(proof)
+            db.flush()
 
-        phash = normalized_asset.phash
-        dhash = normalized_asset.dhash
-        perceptual_vector = normalized_asset.perceptual_vector
-        if normalized_tmp:
-            alt_phash, alt_dhash, alt_vector, alt_clip = self.similarity_engine.compute_image_hashes(normalized_tmp)
-            clip_vector = clip_vector or alt_clip
-            phash = phash or alt_phash
-            dhash = dhash or alt_dhash
-            perceptual_vector = perceptual_vector or alt_vector
+            if self.onchain_anchor.is_configured:
+                with trace_stage("proof.register", "polygon_anchor", user_id=str(user.id)):
+                    try:
+                        anchor_result = self.onchain_anchor.anchor_hash(normalized_hash)
+                    except OnChainConfigurationError as exc:
+                        logger.warning("onchain_configuration_error", error=str(exc))
+                    except Exception as exc:  # pragma: no cover - external dependency
+                        logger.error("onchain_anchor_failed", error=str(exc))
+                    else:
+                        proof.blockchain_tx = anchor_result.transaction_hash
+                        proof.anchor_signature = anchor_result.anchor_signature
+                        proof.anchored_at = anchor_result.anchored_at
+                        queue_event(
+                            user.id,
+                            "proof.anchored",
+                            {
+                                "proof_id": str(proof.id),
+                                "transaction_hash": anchor_result.transaction_hash,
+                                "anchored_at": anchor_result.anchored_at.isoformat(),
+                            },
+                        )
+            ots_receipt = None
+            if "opentimestamps" in self.settings.multi_anchor_targets:
+                ots_result = self.open_timestamp_anchor.anchor_hash(normalized_hash)
+                if ots_result:
+                    proof.opentimestamps_receipt = ots_result.receipt
+                    ots_receipt = LedgerReceipt(
+                        chain="opentimestamps",
+                        transaction_hash=ots_result.receipt.get("ots_receipt"),
+                        anchored_at=ots_result.anchored_at,
+                        payload=ots_result.receipt,
+                    )
 
-        proof = models.Proof(
-            user_id=user.id,
-            file_hash=file_hash,
-            normalized_hash=file_hash,
-            signature=signature,
-            metadata_json=metadata_payload,
-            file_name=content.filename,
-            mime_type=content.mime_type,
-            file_size=len(content.data),
-            phash=phash,
-            dhash=dhash,
-            image_embedding=clip_vector,
-            text_embedding=text_embedding,
-            pipeline_version=self.settings.pipeline_version,
-        )
-        db.add(proof)
-        db.flush()
-
-        if self.onchain_anchor.is_configured:
-            with trace_stage("proof.register", "polygon_anchor", user_id=str(user.id)):
-                try:
-                    anchor_result = self.onchain_anchor.anchor_hash(file_hash)
-                except OnChainConfigurationError as exc:
-                    logger.warning("onchain_configuration_error", error=str(exc))
-                except Exception as exc:  # pragma: no cover - external dependency
-                    logger.error("onchain_anchor_failed", error=str(exc))
-                else:
-                    proof.blockchain_tx = anchor_result.transaction_hash
-                    proof.anchor_signature = anchor_result.anchor_signature
-                    proof.anchored_at = anchor_result.anchored_at
-                    queue_event(
-                        user.id,
-                        "proof.anchored",
-                        {
-                            "proof_id": str(proof.id),
-                            "transaction_hash": anchor_result.transaction_hash,
-                            "anchored_at": anchor_result.anchored_at.isoformat(),
+            receipts: list[LedgerReceipt] = []
+            if proof.blockchain_tx:
+                receipts.append(
+                    LedgerReceipt(
+                        chain="polygon",
+                        transaction_hash=proof.blockchain_tx,
+                        anchored_at=proof.anchored_at,
+                        payload={
+                            "signature": proof.anchor_signature,
+                            "batch": str(proof.anchor_batch_id)
+                            if proof.anchor_batch_id
+                            else None,
                         },
                     )
-        ots_receipt = None
-        if "opentimestamps" in self.settings.multi_anchor_targets:
-            ots_result = self.open_timestamp_anchor.anchor_hash(file_hash)
-            if ots_result:
-                proof.opentimestamps_receipt = ots_result.receipt
-                ots_receipt = LedgerReceipt(
-                    chain="opentimestamps",
-                    transaction_hash=ots_result.receipt.get("ots_receipt"),
-                    anchored_at=ots_result.anchored_at,
-                    payload=ots_result.receipt,
                 )
+            if ots_receipt:
+                receipts.append(ots_receipt)
 
-        receipts: list[LedgerReceipt] = []
-        if proof.blockchain_tx:
-            receipts.append(
-                LedgerReceipt(
-                    chain="polygon",
-                    transaction_hash=proof.blockchain_tx,
-                    anchored_at=proof.anchored_at,
-                    payload={
-                        "signature": proof.anchor_signature,
-                        "batch": str(proof.anchor_batch_id) if proof.anchor_batch_id else None,
-                    },
-                )
+            if not proof.blockchain_tx:
+                self._assign_to_anchor_batch(db, proof)
+                self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
+
+            self._persist_original_file(
+                proof, db, content.data, content.filename, content.mime_type
             )
-        if ots_receipt:
-            receipts.append(ots_receipt)
-
-        if not proof.blockchain_tx:
-            self._assign_to_anchor_batch(db, proof)
-            self.timestamp_authority.prepare_anchor(db, proof, self.task_queue)
-        self._persist_original_file(proof, db, content.data, content.filename, content.mime_type)
-        artifact = self._persist_artifact(proof, user, metadata_payload, signature, db)
-        self._persist_fingerprints(
-            proof,
-            db,
-            normalized_asset.normalized_hash,
-            phash,
-            dhash,
-            perceptual_vector,
-        )
-        self._record_usage(user, proof, db)
-        self.similarity_engine.persist_embeddings(db, proof, perceptual_vector)
-        matches = self.similarity_engine.update_similarity_matches(db, proof)
-
-        merkle_leaf = hashlib.sha256(bytes.fromhex(file_hash)).hexdigest()
-        merkle_root = merkle_leaf
-        with trace_stage("proof.register", "ledger", user_id=str(user.id)):
-            ledger_entry = self.ledger.append(
-                db,
+            self._persist_fingerprints(
                 proof,
+                db,
                 normalized_asset.normalized_hash,
-                merkle_root,
-                merkle_leaf,
-                receipts,
+                phash,
+                dhash,
+                perceptual_vector,
             )
-            ledger_payload = self.ledger.build_receipt_json(proof, ledger_entry)
-        with trace_stage("proof.register", "c2pa", user_id=str(user.id)):
-            _, manifest_ref = self.c2pa.embed(
-                normalized_tmp,
-                C2PAManifestContext(
-                    proof_id=str(proof.id),
-                    normalized_hash=file_hash,
-                    signature=signature,
-                    metadata=metadata_payload,
-                    ledger_entry=ledger_payload["ledger"],
-                    receipts=ledger_payload["blockchain_receipts"],
-                ),
+            self._record_usage(user, proof, db)
+            self.similarity_engine.persist_embeddings(db, proof, perceptual_vector)
+            matches = self.similarity_engine.update_similarity_matches(db, proof)
+
+            merkle_leaf = hashlib.sha256(bytes.fromhex(normalized_hash)).hexdigest()
+            merkle_root = merkle_leaf
+            with trace_stage("proof.register", "ledger", user_id=str(user.id)):
+                ledger_entry = self.ledger.append(
+                    db,
+                    proof,
+                    normalized_asset.normalized_hash,
+                    merkle_root,
+                    merkle_leaf,
+                    receipts,
+                )
+                ledger_payload = self.ledger.build_receipt_json(proof, ledger_entry)
+
+            with trace_stage("proof.register", "c2pa", user_id=str(user.id)):
+                _, manifest_ref = self.c2pa.embed(
+                    normalized_tmp,
+                    C2PAManifestContext(
+                        proof_id=str(proof.id),
+                        normalized_hash=normalized_hash,
+                        signature=signature,
+                        metadata=metadata_payload,
+                        ledger_entry=ledger_payload["ledger"],
+                        receipts=ledger_payload["blockchain_receipts"],
+                    ),
+                )
+            proof.c2pa_manifest_ref = manifest_ref
+            artifact = self._persist_artifact(
+                proof,
+                user,
+                metadata_payload,
+                signature,
+                db,
+                transparency_log=ledger_payload["ledger"],
+                receipts=ledger_payload["blockchain_receipts"],
             )
-        proof.c2pa_manifest_ref = manifest_ref
-        artifact = self._persist_artifact(
-            proof,
-            user,
-            metadata_payload,
-            signature,
-            db,
-            transparency_log=ledger_payload["ledger"],
-            receipts=ledger_payload["blockchain_receipts"],
-        )
 
-        final_normalized_bytes = (
-            normalized_tmp.read_bytes()
-            if normalized_tmp and normalized_tmp.exists()
-            else normalized_asset.normalized_bytes
-        )
-        self._persist_normalized_file(
-            proof,
-            db,
-            final_normalized_bytes,
-            normalized_asset.normalized_extension,
-            normalized_asset.normalized_mime,
-        )
+            final_normalized_bytes = (
+                normalized_tmp.read_bytes()
+                if normalized_tmp and normalized_tmp.exists()
+                else normalized_asset.normalized_bytes
+            )
+            self._persist_normalized_file(
+                proof,
+                db,
+                final_normalized_bytes,
+                normalized_asset.normalized_extension,
+                normalized_asset.normalized_mime,
+            )
 
-        proof.risk_score = self._calculate_risk_score(
-            proof,
-            matches,
-            normalized_asset.warnings,
-            manifest_present=bool(manifest_ref),
-        )
-        self._record_usage_meter(db, user, "proofs")
+            proof.risk_score = self._calculate_risk_score(
+                proof,
+                matches,
+                normalized_asset.warnings,
+                manifest_present=bool(manifest_ref),
+            )
+            self._record_usage_meter(db, user, "proofs")
 
-        db.commit()
-        db.refresh(proof)
+            db.commit()
+            db.refresh(proof)
 
-        for temp in filter(None, [tmp_file, normalized_tmp]):
-            try:
-                temp.unlink()
-            except FileNotFoundError:
-                pass
+            self.task_queue.enqueue("prooforigin.reindex_similarity", str(proof.id))
+            queue_event(
+                user.id,
+                "proof.generated",
+                {
+                    "proof_id": str(proof.id),
+                    "file_hash": proof.file_hash,
+                    "created_at": proof.created_at.isoformat(),
+                },
+            )
 
-        self.task_queue.enqueue("prooforigin.reindex_similarity", str(proof.id))
-        queue_event(
-            user.id,
-            "proof.generated",
-            {
-                "proof_id": str(proof.id),
-                "file_hash": proof.file_hash,
-                "created_at": proof.created_at.isoformat(),
-            },
-        )
-
-        return ProofCreationResult(proof=proof, matches=matches, artifact=artifact)
+            return ProofCreationResult(proof=proof, matches=matches, artifact=artifact)
+        finally:
+            for temp in filter(None, [tmp_file, normalized_tmp]):
+                try:
+                    temp.unlink()
+                except FileNotFoundError:
+                    pass
 
     # ------------------------------------------------------------------
     def verify_hash(
