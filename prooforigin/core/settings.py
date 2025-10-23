@@ -1,13 +1,49 @@
 """Application settings for the ProofOrigin platform."""
 from __future__ import annotations
 
+import json
+import os
 import secrets
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field
+
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+except ImportError:  # pragma: no cover - fallback for minimal environments
+    class BaseSettings(BaseModel):  # type: ignore[misc]
+        model_config: dict[str, Any] = {}
+
+        def __init__(self, **values: Any) -> None:
+            cls = self.__class__
+            config = getattr(cls, "model_config", {})
+            env_prefix = config.get("env_prefix", "")
+            case_sensitive = config.get("case_sensitive", False)
+            env_values: dict[str, Any] = {}
+            for field_name, field_info in cls.model_fields.items():
+                env_key = field_info.alias or field_name
+                candidates = [f"{env_prefix}{env_key}"]
+                if not case_sensitive:
+                    candidates.extend(
+                        [
+                            f"{env_prefix}{env_key}".upper(),
+                            f"{env_prefix}{env_key}".lower(),
+                        ]
+                    )
+                for candidate in candidates:
+                    if candidate in os.environ:
+                        raw = os.environ[candidate]
+                        try:
+                            env_values[field_name] = json.loads(raw)
+                        except Exception:
+                            env_values[field_name] = raw
+                        break
+            super().__init__(**{**env_values, **values})
+
+    def SettingsConfigDict(**kwargs: Any) -> dict[str, Any]:  # type: ignore[misc]
+        return kwargs
 
 
 class Settings(BaseSettings):

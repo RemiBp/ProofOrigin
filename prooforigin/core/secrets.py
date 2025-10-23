@@ -7,7 +7,10 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-import boto3
+try:  # pragma: no cover - optional dependency
+    import boto3
+except Exception:  # pragma: no cover
+    boto3 = None  # type: ignore
 
 try:  # optional dependency for HashiCorp Vault
     import hvac
@@ -46,12 +49,16 @@ class MasterKeyProvider:
         return dev_key.encode()
 
     def _from_kms(self) -> Optional[bytes]:
-        if not self.settings.aws_kms_key_id:
+        if boto3 is None or not self.settings.aws_kms_key_id:
             return None
         region = self.settings.aws_region or os.getenv("AWS_REGION")
         if not region:
             return None
-        kms = boto3.client("kms", region_name=region)
+        try:
+            kms = boto3.client("kms", region_name=region)
+        except Exception as exc:  # pragma: no cover - configuration/network
+            logger.warning("kms_client_init_failed", error=str(exc))
+            return None
         ciphertext = self.settings.kms_encrypted_master_key or os.getenv(
             "KMS_ENCRYPTED_MASTER_KEY"
         )
@@ -121,20 +128,23 @@ class MasterKeyProvider:
         new_key = os.urandom(32)
         backend = (self.settings.secrets_backend or "local").lower()
         if backend == "aws_kms":
-            try:
-                kms = boto3.client("kms", region_name=self.settings.aws_region)
-                response = kms.encrypt(
-                    KeyId=self.settings.aws_kms_key_id,
-                    Plaintext=new_key,
-                )
-                ciphertext = response.get("CiphertextBlob")
-                if ciphertext:
-                    encoded = base64.b64encode(ciphertext).decode()
-                    self.settings.kms_encrypted_master_key = encoded
-                    logger.info("kms_master_key_rotated")
-                    return new_key
-            except Exception as exc:  # pragma: no cover - external service
-                logger.error("kms_rotate_failed", error=str(exc))
+            if boto3 is None:
+                logger.warning("kms_dependency_missing")
+            else:
+                try:
+                    kms = boto3.client("kms", region_name=self.settings.aws_region)
+                    response = kms.encrypt(
+                        KeyId=self.settings.aws_kms_key_id,
+                        Plaintext=new_key,
+                    )
+                    ciphertext = response.get("CiphertextBlob")
+                    if ciphertext:
+                        encoded = base64.b64encode(ciphertext).decode()
+                        self.settings.kms_encrypted_master_key = encoded
+                        logger.info("kms_master_key_rotated")
+                        return new_key
+                except Exception as exc:  # pragma: no cover - external service
+                    logger.error("kms_rotate_failed", error=str(exc))
         elif backend == "vault" and hvac is not None:
             try:
                 client = hvac.Client(url=self.settings.vault_addr, token=self.settings.vault_token)
