@@ -4,7 +4,11 @@ from __future__ import annotations
 import json
 import uuid
 
-import stripe
+try:
+    import stripe
+except ImportError:  # pragma: no cover - optional dependency
+    stripe = None  # type: ignore
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
@@ -46,7 +50,7 @@ def buy_credits(
     plan_name = (payload.plan if payload else "pro").lower()
     plan_details = get_plan_details(plan_name)
 
-    if plan_details.name == "free":
+    if plan_details.name == "free" or stripe is None:
         _apply_plan(current_user, plan_details, db)
         db.commit()
         return schemas.StripeCheckoutResponse(
@@ -105,6 +109,9 @@ def buy_credits(
 
 @router.post("/stripe/webhook", status_code=status.HTTP_202_ACCEPTED)
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)) -> None:
+    if stripe is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Stripe integration disabled")
+
     payload = await request.body()
     sig_header = request.headers.get("Stripe-Signature")
     stripe.api_key = settings.stripe_api_key

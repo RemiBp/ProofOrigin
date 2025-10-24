@@ -11,10 +11,24 @@ from sqlalchemy.orm import Session
 
 from prooforigin.api.dependencies.database import get_db
 from prooforigin.core import models
+from prooforigin.core.logging import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 _templates_path = Path(__file__).resolve().parent.parent / "templates"
-templates = Jinja2Templates(directory=str(_templates_path))
+
+try:
+    templates = Jinja2Templates(directory=str(_templates_path))
+except AssertionError:  # pragma: no cover - Jinja2 not installed
+    templates = None  # type: ignore
+    logger.warning("jinja2_not_available", path=str(_templates_path))
+
+
+def _render(template_name: str, context: dict[str, object]) -> HTMLResponse:
+    if templates is None:
+        body = "<html><body><h1>ProofOrigin</h1><p>Template rendering unavailable.</p></body></html>"
+        return HTMLResponse(content=body)
+    return templates.TemplateResponse(template_name, context)
 
 
 def _base_context(request: Request) -> dict[str, object]:
@@ -30,7 +44,7 @@ def _base_context(request: Request) -> dict[str, object]:
 @router.get("/", response_class=HTMLResponse, tags=["web"])
 def landing_page(request: Request) -> HTMLResponse:
     context = _base_context(request)
-    return templates.TemplateResponse("index.html", context)
+    return _render("index.html", context)
 
 
 @router.get("/dashboard", response_class=HTMLResponse, tags=["web"])
@@ -66,14 +80,14 @@ def dashboard(
             ],
         }
     )
-    return templates.TemplateResponse("dashboard.html", context)
+    return _render("dashboard.html", context)
 
 
 @router.get("/verify/{file_hash}/view", response_class=HTMLResponse, tags=["web"])
 def verify_page(file_hash: str, request: Request) -> HTMLResponse:
     context = _base_context(request)
     context["file_hash"] = file_hash
-    return templates.TemplateResponse("verify.html", context)
+    return _render("verify.html", context)
 
 
 __all__ = ["router"]

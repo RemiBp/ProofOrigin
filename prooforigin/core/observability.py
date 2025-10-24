@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from prometheus_fastapi_instrumentator import Instrumentator
-
 from prooforigin.core.logging import get_logger
 from prooforigin.core.settings import get_settings
+
+try:  # pragma: no cover - optional dependencies
+    from prometheus_fastapi_instrumentator import Instrumentator
+except ImportError:  # pragma: no cover
+    Instrumentator = None  # type: ignore
 
 try:  # Optional
     import sentry_sdk
@@ -20,9 +23,12 @@ def configure_observability(app: FastAPI) -> None:
     settings = get_settings()
 
     if settings.enable_prometheus:
-        Instrumentator().instrument(app, metric_namespace=settings.metrics_namespace).expose(
-            app, include_in_schema=False
-        )
+        if Instrumentator is None:
+            logger.warning("prometheus_not_available")
+        else:
+            Instrumentator().instrument(
+                app, metric_namespace=settings.metrics_namespace
+            ).expose(app, include_in_schema=False)
 
     if settings.sentry_dsn:
         if sentry_sdk is None:  # pragma: no cover - optional dependency not installed
